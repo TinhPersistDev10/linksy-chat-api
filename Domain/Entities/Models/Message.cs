@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using linksy_backend_api.Domain.Entities.Models;
 
 namespace linksy_backend_api.Models;
 
@@ -38,4 +39,9 @@ public partial class Message
     public virtual Message? ParentMessage { get; set; }
 
     public virtual User? Sender { get; set; }
+
+    // In Message.cs — ADD these navigation properties
+    public virtual ICollection<MessageAttachment> MessageAttachments { get; set; } = new List<MessageAttachment>();
+    public virtual ICollection<MessageReaction> MessageReactions { get; set; } = new List<MessageReaction>();
+    public virtual ICollection<MessageDelivery> MessageDeliveries { get; set; } = new List<MessageDelivery>();
 }

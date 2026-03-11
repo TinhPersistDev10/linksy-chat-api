@@ -244,7 +244,7 @@ var app = builder.Build();
 //         c.RoutePrefix = string.Empty;
 //     });
 // }
-app.UseStaticFiles();
+// app.UseStaticFiles();
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
