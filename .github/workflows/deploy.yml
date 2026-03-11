@@ -1,0 +1,66 @@
+name: Deploy ChatApp API with Migrations
+
+on:
+  push:
+    branches: [ master, develop ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_PATH: './linksy_backend_api.csproj'
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.PROJECT_PATH }}
+    
+    - name: Build
+      run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore
+    
+    - name: Run tests
+      run: dotnet test ${{ env.PROJECT_PATH }} --no-build --verbosity normal --configuration Release
+      continue-on-error: true
+    
+    - name: Install EF Core tools
+      run: dotnet tool install --global dotnet-ef --version 8.0.7
+    
+    - name: Apply database migrations
+      run: |
+        dotnet ef database update \
+          --project ${{ env.PROJECT_PATH }} \
+          --connection "${{ secrets.DB_CONNECTION }}" \
+          --verbose
+      env:
+        ASPNETCORE_ENVIRONMENT: Production
+        ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION }}
+        Jwt__Key: ${{ secrets.JWT_KEY }}
+        Jwt__Issuer: ${{ secrets.JWT_ISSUER }}
+        Jwt__Audience: ${{ secrets.JWT_AUDIENCE }}
+    
+    - name: Publish application
+      run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o ./publish
+    
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linksy-api
+        path: ./publish
+        retention-days: 7
+
+    - name: Deploy to Render
+      if: github.ref == 'refs/heads/master'  # Chỉ deploy khi push lên master
+      run: |
+        curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d '{"clearCache": false}'

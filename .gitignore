@@ -1,0 +1,41 @@
+# Tạo file .gitignore trong thư mục gốc project
+# Nội dung file .gitignore cho ASP.NET Core
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+[Tt]humbs.db
+*.sql
+*.back
+*.bak
+*.temp
+*.tmp
+*.log
+*.vspscc
+*.vssscc
+*.scc
+_ReSharper.*
+*.csproj.user
+*.pidb
+*.pdb
+*.db
+*.dbmdl
+*.db-journal
+*.master
+*.resx
+*.refresh
+*.lock.json
+*.orig
+packages/
+.nuget/
+nuget.exe
+*.nupkg
+appsettings.Development.json
+appsettings.Production.json
+appsettings.json
+# appsettings.*.json

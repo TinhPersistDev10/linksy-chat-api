@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: chatapi_backend
+    ports:
+      - "5253:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=${DB_CONNECTION}
+      - Jwt__Key=${JWT_KEY}
+      - Jwt__Issuer=${JWT_ISSUER}
+      - Jwt__Audience=${JWT_AUDIENCE}
+      - Email__SmtpUsername=${EMAIL_USERNAME}
+      - Email__SmtpPassword=${EMAIL_PASSWORD}
+      - Email__FromEmail=${EMAIL_FROM}
+      - Email__FromName=${EMAIL_FROM_NAME}
+      
+    volumes:
+      - dataprotection-keys:/app/.aspnet/DataProtection-Keys
+    restart: unless-stopped
+
+volumes:
+  dataprotection-keys:

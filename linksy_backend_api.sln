@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "linksy_backend_api", "linksy_backend_api.csproj", "{D3ADF412-7CC0-6151-C658-9E724694C491}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D3ADF412-7CC0-6151-C658-9E724694C491}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D3ADF412-7CC0-6151-C658-9E724694C491}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D3ADF412-7CC0-6151-C658-9E724694C491}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D3ADF412-7CC0-6151-C658-9E724694C491}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D6A12543-C5DE-49E1-9E74-3F4137BF28B6}
+	EndGlobalSection
+EndGlobal

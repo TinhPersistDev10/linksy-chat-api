@@ -1,0 +1,27 @@
+# Binaries
+bin/
+obj/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.userosscache
+*.suo
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+publish/
+
+# NuGet packages
+*.nupkg
+packages/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/

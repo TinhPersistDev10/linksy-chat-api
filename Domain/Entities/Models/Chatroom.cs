@@ -1,0 +1,43 @@
+﻿using System;
+using System.Collections.Generic;
+
+namespace linksy_backend_api.Models;
+
+public partial class Chatroom
+{
+    public Guid ChatroomId { get; set; }
+
+    public string? RoomName { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? Avatar { get; set; }
+
+    public string RoomType { get; set; } = null!;
+
+    public Guid CreatedBy { get; set; }
+
+    public bool? IsActive { get; set; }
+
+    public bool? IsArchived { get; set; }
+
+    public Guid? LastMessageId { get; set; }
+
+    public DateTime? LastMessageAt { get; set; }
+
+    public DateTime? LastActivityAt { get; set; }
+
+    public DateTime? CreatedAt { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
+
+    public virtual User CreatedByNavigation { get; set; } = null!;
+
+    public virtual ICollection<GroupInvitation> GroupInvitations { get; set; } = new List<GroupInvitation>();
+
+    public virtual Message? LastMessage { get; set; }
+
+    public virtual ICollection<Message> Messages { get; set; } = new List<Message>();
+
+    public virtual ICollection<ChatroomMember> ChatroomMembers { get; set; } = new List<ChatroomMember>();
+}
