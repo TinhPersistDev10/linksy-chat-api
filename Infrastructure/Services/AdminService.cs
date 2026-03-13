@@ -675,10 +675,7 @@ namespace linksy_backend_api.Infrastructure.Services
             }
         }
 
-        public Task<ApiResponseDto> HardDeleteUserAsync(Guid userId)
-        {
-            throw new NotImplementedException();
-        }
+       
 
         public async Task<ApiResponseDto> RemoveRoleAsync(Guid userId, int roleId)
         {
@@ -900,6 +897,9 @@ namespace linksy_backend_api.Infrastructure.Services
                 };
             }
         }
-        
+         public Task<ApiResponseDto> HardDeleteUserAsync(Guid userId)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

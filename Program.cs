@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using linksy_backend_api.Core.Interfaces.Repositories;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Interfaces.Repositories;
 using linksy_backend_api.Hubs;
 using linksy_backend_api.Infrastructure.Filters;
 using linksy_backend_api.Infrastructure.Repositories;
@@ -197,6 +198,8 @@ builder.Services.AddScoped<IFriendshipRepository, FriendshipRepository>();
 builder.Services.AddScoped<IFriendRequestRepository, FriendRequestRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<IBlockedUserRepository, BlockedUserRepository>();
+builder.Services.AddScoped<IGroupInvitationRepository, GroupInvitationRepository>();
+builder.Services.AddScoped<IMemberPermissionRepository, MemberPermissionRepository>();
 
 // Generic Repository for models without specific repository
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
@@ -214,6 +217,8 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IBlockedService, BlockedService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IGroupInvitationService, GroupInvitationService>();
+
 builder.Services.AddDirectoryBrowser();
 
 // Add Memory Cache
@@ -244,8 +249,6 @@ var app = builder.Build();
 //         c.RoutePrefix = string.Empty;
 //     });
 // }
-// app.UseStaticFiles();
-
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -253,8 +256,6 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = string.Empty;
 });
 app.UseResponseCompression();
-
-// app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors("AllowAll");
 

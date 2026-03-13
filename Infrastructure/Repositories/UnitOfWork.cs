@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using linksy_backend_api.Core.Interfaces.Repositories;
 using linksy_backend_api.Domain.Entities.Models;
 using linksy_backend_api.Domain.Interfaces.Repositories;
@@ -15,12 +11,12 @@ namespace linksy_backend_api.Repositories
     public class UnitOfWork : IUnitOfWork
     {
         private readonly LinksyDbContext _context;
-        private ILogger<UnitOfWork>? _logger;
-        private IDbContextTransaction _transaction;
-        
+        private readonly ILogger<UnitOfWork> _logger;
+        private IDbContextTransaction? _transaction;
         private bool _disposed = false;
 
         #region Constructor
+
         public UnitOfWork(LinksyDbContext context, ILogger<UnitOfWork> logger)
         {
             _context = context;
@@ -31,81 +27,91 @@ namespace linksy_backend_api.Repositories
         private void InitializeRepositories()
         {
             // User Management
-            Users = new Repository<User>(_context);
-            Roles = new Repository<Role>(_context);
-            UserRoles = new Repository<UserRole>(_context);
-            AccessTokens = new Repository<AccessToken>(_context);
-            EmailOtps = new Repository<EmailOtp>(_context);
+            Users          = new Repository<User>(_context);
+            Roles          = new Repository<Role>(_context);
+            UserRoles      = new Repository<UserRole>(_context);
+            AccessTokens   = new Repository<AccessToken>(_context);
+            EmailOtps      = new Repository<EmailOtp>(_context);
 
             // Chatrooms
-            Chatrooms = new Repository<Chatroom>(_context);
-            ChatroomMembers = new Repository<ChatroomMember>(_context);
+            Chatrooms         = new Repository<Chatroom>(_context);
+            ChatroomMembers   = new Repository<ChatroomMember>(_context);
             MemberPermissions = new Repository<MemberPermission>(_context);
-            GroupInvitations = new Repository<GroupInvitation>(_context);
+            GroupInvitations  = new Repository<GroupInvitation>(_context);
 
             // Messages
             Messages = new Repository<Message>(_context);
 
             // Social
-            Friendships = new Repository<Friendship>(_context);
+            Friendships   = new Repository<Friendship>(_context);
             FriendRequests = new Repository<FriendRequest>(_context);
-            BlockedUsers = new Repository<BlockedUser>(_context);
+            BlockedUsers  = new Repository<BlockedUser>(_context);
 
             // Notifications
             Notifications = new Repository<Notification>(_context);
 
             // Specialized Repositories
-            ChatroomRepository = new ChatroomRepository(_context);
-            UserRepository = new UserRepository(_context);
-            MessageRepository = new MessageRepository(_context);
-            MemberPermissionRepository = new MemberPermissionRepository(_context);
-            FriendRequestRepository = new FriendRequestRepository(_context);
-            FriendshipRepository  = new FriendshipRepository(_context);
-            BlockedUserRepository = new BlockedUserRepository(_context);
-            NotificationRepository = new NotificationRepository(_context);
-
+            ChatroomRepository          = new ChatroomRepository(_context);
+            ChatroomMemberRepository    = new ChatroomMemberRepository(_context);
+            GroupInvitationRepository   = new GroupInvitationRepository(_context);
+            UserRepository              = new UserRepository(_context);
+            MessageRepository           = new MessageRepository(_context);
+            MemberPermissionRepository  = new MemberPermissionRepository(_context);
+            FriendRequestRepository     = new FriendRequestRepository(_context);
+            FriendshipRepository        = new FriendshipRepository(_context);
+            BlockedUserRepository       = new BlockedUserRepository(_context);
+            NotificationRepository      = new NotificationRepository(_context);
+            
             _logger.LogDebug("UnitOfWork repositories initialized");
         }
+
         #endregion
-       
+
         #region Generic Repositories
 
-        public IRepository<User> Users { get; private set; }
-        public IRepository<Role> Roles { get; private set; }
-        public IRepository<UserRole> UserRoles { get; private set; }
-        public IRepository<AccessToken> AccessTokens { get; private set; }
-        public IRepository<EmailOtp> EmailOtps { get; private set; }
+        // User Management
+        public IRepository<User>        Users        { get; private set; } = null!;
+        public IRepository<Role>        Roles        { get; private set; }= null!;
+        public IRepository<UserRole>    UserRoles    { get; private set; }= null!;
+        public IRepository<AccessToken> AccessTokens { get; private set; }= null!;
+        public IRepository<EmailOtp>    EmailOtps    { get; private set; }= null!;
 
-        public IRepository<Chatroom> Chatrooms { get; private set; }
-        public IRepository<ChatroomMember> ChatroomMembers { get; private set; }
-        public IRepository<MemberPermission> MemberPermissions { get; private set; }
-        public IRepository<GroupInvitation> GroupInvitations { get; private set; }
+        // Chatrooms
+        public IRepository<Chatroom>       Chatrooms         { get; private set; }= null!;
+        public IRepository<ChatroomMember> ChatroomMembers   { get; private set; }= null!;
+        public IRepository<MemberPermission> MemberPermissions { get; private set; }= null!;
+        public IRepository<GroupInvitation>  GroupInvitations  { get; private set; }= null!;
 
-        public IRepository<Message> Messages { get; private set; }
+        // Messages
+        public IRepository<Message> Messages { get; private set; }= null!;
 
-        public IRepository<Friendship> Friendships { get; private set; }
-        public IRepository<FriendRequest> FriendRequests { get; private set; }
-        public IRepository<BlockedUser> BlockedUsers { get; private set; }
+        // Social
+        public IRepository<Friendship>   Friendships    { get; private set; }= null!;
+        public IRepository<FriendRequest> FriendRequests { get; private set; }= null!;
+        public IRepository<BlockedUser>  BlockedUsers   { get; private set; }= null!;
 
-        public IRepository<Notification> Notifications { get; private set; }
+        // Notifications
+        public IRepository<Notification> Notifications { get; private set; }= null!;
 
         #endregion
 
         #region Specialized Repositories
 
-        public IChatroomRepository ChatroomRepository { get; private set; }
-        public IUserRepository UserRepository { get; private set; }
-        public IMessageRepository MessageRepository { get; private set; }
-        public IMemberPermissionRepository MemberPermissionRepository { get; private set; }
-        public IFriendRequestRepository FriendRequestRepository { get; private set; }
-        public IFriendshipRepository FriendshipRepository { get; private set; }
-        public IBlockedUserRepository BlockedUserRepository { get; private set; }
-        public INotificationRepository NotificationRepository { get; private set; }
+        public IChatroomRepository         ChatroomRepository         { get; private set; }= null!;
+        public IChatroomMemberRepository   ChatroomMemberRepository   { get; private set; }= null!;
+        public IGroupInvitationRepository  GroupInvitationRepository  { get; private set; }= null!;
+        public IUserRepository             UserRepository             { get; private set; }= null!;
+        public IMessageRepository          MessageRepository          { get; private set; }= null!;
+        public IMemberPermissionRepository MemberPermissionRepository { get; private set; }= null!;
+        public IFriendRequestRepository    FriendRequestRepository    { get; private set; }= null!;
+        public IFriendshipRepository       FriendshipRepository       { get; private set; }= null!;
+        public IBlockedUserRepository      BlockedUserRepository      { get; private set; }= null!;
+        public INotificationRepository     NotificationRepository     { get; private set; }= null!;
+
         #endregion
 
         #region Transaction Management
 
-        /// Bắt đầu một database transaction mới
         public async Task BeginTransactionAsync()
         {
             if (_transaction != null)
@@ -126,7 +132,6 @@ namespace linksy_backend_api.Repositories
             }
         }
 
-        /// Commit transaction và lưu tất cả thay đổi
         public async Task CommitTransactionAsync()
         {
             if (_transaction == null)
@@ -137,10 +142,7 @@ namespace linksy_backend_api.Repositories
 
             try
             {
-                // Save changes first
                 await SaveChangesAsync();
-
-                // Then commit transaction
                 await _transaction.CommitAsync();
                 _logger.LogDebug("Database transaction committed successfully");
             }
@@ -152,15 +154,11 @@ namespace linksy_backend_api.Repositories
             }
             finally
             {
-                if (_transaction != null)
-                {
-                    await _transaction.DisposeAsync();
-                    _transaction = null;
-                }
+                await _transaction.DisposeAsync();
+                _transaction = null;
             }
         }
 
-        /// Rollback transaction và hủy tất cả thay đổi
         public async Task RollbackTransactionAsync()
         {
             if (_transaction == null)
@@ -181,11 +179,8 @@ namespace linksy_backend_api.Repositories
             }
             finally
             {
-                if (_transaction != null)
-                {
-                    await _transaction.DisposeAsync();
-                    _transaction = null;
-                }
+                await _transaction.DisposeAsync();
+                _transaction = null;
             }
         }
 
@@ -193,7 +188,6 @@ namespace linksy_backend_api.Repositories
 
         #region Save Changes
 
-        /// Lưu tất cả thay đổi vào database (async)
         public async Task<int> SaveChangesAsync()
         {
             try
@@ -209,7 +203,6 @@ namespace linksy_backend_api.Repositories
             }
         }
 
-        /// Lưu tất cả thay đổi vào database (sync)
         public int SaveChanges()
         {
             try
@@ -229,24 +222,20 @@ namespace linksy_backend_api.Repositories
 
         #region Dispose
 
-        /// Dispose resources
         protected virtual void Dispose(bool disposing)
         {
             if (!_disposed)
             {
                 if (disposing)
                 {
-                    // Dispose managed resources
                     _transaction?.Dispose();
                     _context?.Dispose();
                     _logger.LogDebug("UnitOfWork disposed");
                 }
-
                 _disposed = true;
             }
         }
 
-        /// Public dispose method
         public void Dispose()
         {
             Dispose(true);
@@ -254,6 +243,5 @@ namespace linksy_backend_api.Repositories
         }
 
         #endregion
-
     }
 }

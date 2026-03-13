@@ -14,7 +14,7 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly Cloudinary _cloudinary;
         private readonly ILogger<FileService> _logger;
         private readonly string[] _allowedExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-        private const long MaxFileSize = 5 * 1024 * 1024; // 5MB
+        private const long MaxFileSize = 5 * 1024 * 1024;
 
         public FileService(IConfiguration configuration, ILogger<FileService> logger)
         {
@@ -56,8 +56,6 @@ namespace linksy_backend_api.Infrastructure.Services
                 var uploadResult = await _cloudinary.UploadAsync(uploadParams);
                 if (uploadResult.Error != null)
                     throw new Exception($"Cloudinary upload error: {uploadResult.Error.Message}");
-
-                // Trả về Secure URL (https)
                 return uploadResult.SecureUrl.ToString();
             }
             catch (Exception ex)

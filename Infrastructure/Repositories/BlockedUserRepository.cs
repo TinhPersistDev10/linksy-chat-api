@@ -12,7 +12,7 @@ namespace linksy_backend_api.Infrastructure.Repositories
     public class BlockedUserRepository : Repository<BlockedUser>, IBlockedUserRepository
     {
         private readonly LinksyDbContext _context;
-        private readonly ILogger<BlockedUserRepository> _logger;
+        // private readonly ILogger<BlockedUserRepository> _logger;
 
         public BlockedUserRepository(LinksyDbContext context) : base(context)
         {
@@ -33,8 +33,8 @@ namespace linksy_backend_api.Infrastructure.Repositories
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "Error checking if {User1Id} and {User2Id} are blocked",
-                                    user1Id, user2Id);
+                // _logger.LogError(ex, "Error checking if {User1Id} and {User2Id} are blocked",
+                //                     user1Id, user2Id);
                 throw;
             }
         }
@@ -47,9 +47,9 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 .AsNoTracking()
                 .CountAsync(b => b.BlockedUserId == userId);
             }
-            catch (System.Exception ex)
+            catch
             {
-                _logger.LogError(ex, "Error counting blocked users for {UserId}", userId);
+                // _logger.LogError(ex, "Error counting blocked users for {UserId}", userId);
                 throw;
             }
         }
@@ -64,11 +64,11 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 b.BlockedUserId == blockedUserId);
 
             }
-            catch (System.Exception ex)
+            catch
             {
 
-                _logger.LogError(ex, "Error getting block from {BlockerId} to {BlockedUserId}",
-                    blockerId, blockedUserId);
+                // _logger.LogError(ex, "Error getting block from {BlockerId} to {BlockedUserId}",
+                //     blockerId, blockedUserId);
                 throw;
             }
         }
@@ -83,10 +83,10 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 .OrderByDescending(b => b.BlockedAt)
                 .ToListAsync();
             }
-            catch (System.Exception ex)
+            catch
             {
 
-                _logger.LogError(ex, "Error getting users who blocked {UserId}", userId);
+                // _logger.LogError(ex, "Error getting users who blocked {UserId}", userId);
                 throw;
             }
         }
@@ -101,9 +101,9 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 .OrderByDescending(b => b.BlockedAt)
                 .ToListAsync();
             }
-            catch (System.Exception ex)
+            catch
             {
-                _logger.LogError(ex, "Error getting blocked users for {UserId}", userId);
+                //     _logger.LogError(ex, "Error getting blocked users for {UserId}", userId);
                 throw;
             }
         }
@@ -118,9 +118,9 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 .OrderByDescending(b => b.BlockedAt)
                 .ToListAsync();
             }
-            catch (System.Exception ex)
+            catch
             {
-                _logger.LogError(ex, "Error getting blocked users with details for {UserId}", userId);
+                // _logger.LogError(ex, "Error getting blocked users with details for {UserId}", userId);
                 throw;
             }
         }
@@ -133,9 +133,9 @@ namespace linksy_backend_api.Infrastructure.Repositories
                     .AsNoTracking()
                     .AnyAsync(b => b.BlockerUserId == blockerId && b.BlockedUserId == blockedUserId);
             }
-            catch (System.Exception ex)
+            catch
             {
-                _logger.LogError(ex, "Error checking if {BlockerId} has blocked {BlockedUserId}", blockerId, blockedUserId);
+                // _logger.LogError(ex, "Error checking if {BlockerId} has blocked {BlockedUserId}", blockerId, blockedUserId);
                 throw;
             }
         }

@@ -16,6 +16,5 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task MarkMessageAsReadAsync(Guid userId, Guid chatroomId, Guid messageId);
         Task<List<MessageResponse>> GetRepliesAsync(Guid messageId);
         Task CreateMessageNotificationsAsync(Message message, Guid senderId);
-        Task<MessageResponse> MapToMessageResponseAsync(Message message);
     }
 }

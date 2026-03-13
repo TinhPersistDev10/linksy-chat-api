@@ -135,9 +135,6 @@ namespace linksy_backend_api.Services
 </body>
 </html>";
         }
-
-
-
         private async Task SendEmailAsync(string toEmail, string subject, object body)
         {
             try
@@ -244,7 +241,7 @@ namespace linksy_backend_api.Services
         </div>
         <div class='content'>
             <h2>Xin chào {username}!</h2>
-            <p>Cảm ơn bạn đã tham gia cộng đồng ChatApp. Chúng tôi rất vui được có bạn!</p>
+            <p>Cảm ơn bạn đã tham gia cộng đồng Linksy. Chúng tôi rất vui được có bạn!</p>
             
             <h3>Một số tính năng tuyệt vời bạn có thể khám phá:</h3>
             

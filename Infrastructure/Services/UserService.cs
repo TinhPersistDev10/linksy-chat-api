@@ -7,6 +7,7 @@ using linksy_backend_api.Core.DTOs.Responses.Users;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.DTOs.UserDTO;
 using linksy_backend_api.Infrastructure.Helpers;
+using linksy_backend_api.Infrastructure.Mappers;
 using linksy_backend_api.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -79,15 +80,13 @@ namespace linksy_backend_api.Infrastructure.Services
                 throw new Exception("User not found");
             }
 
-            return MapToUserInfoDto(user);
+            return UserMapper.ToResponse(user);
         }
 
         public async Task<UserInfoDto> UpdateUserAsync(Guid userId, UpdateUserByAdminDto updateUserDto)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
-
-
-            return MapToUserInfoDto(user);
+            return UserMapper.ToResponse(user);
         }
 
         public async Task<AvatarResponse> UpdateUserAvatarAsync(Guid userId, IFormFile avatarFile)
@@ -137,21 +136,6 @@ namespace linksy_backend_api.Infrastructure.Services
             }
         }
 
-        private UserInfoDto MapToUserInfoDto(User user)
-        {
-            return new UserInfoDto
-            {
-                UserId = user.UserId,
-                Username = user.Username,
-                Email = user.Email ?? string.Empty,
-                Fullname = user.Fullname ?? string.Empty,
-                Avatar = DefaultAvatarHelper.GetAvatarOrDefault(user.Avatar, user.UserId, username: user.Username, fullname: user.Fullname),
-                Bio = user.Bio ?? string.Empty,
-                DateOfBirth = user.DateOfBirth?.ToDateTime(TimeOnly.MinValue),
-                IsEmailVerified = user.IsEmailVerified ?? false,
-                CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
-                LastLoginAt = user.LastLoginAt ?? DateTime.UtcNow
-            };
-        }
+
     }
 }

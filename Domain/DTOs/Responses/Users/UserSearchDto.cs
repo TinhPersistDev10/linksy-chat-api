@@ -8,12 +8,12 @@ namespace linksy_backend_api.DTOs.UserDTO
     public class UserSearchDto
     {
         public Guid UserId { get; set; }
-        public string Username { get; set; }
+        public required string Username { get; set; } 
         public string? Fullname { get; set; }
         public string? Avatar { get; set; }
         public string? Bio { get; set; }
-        public string RelationshipStatus { get; set; }
-        public string ActionButtonText { get; set; }
+        public required string RelationshipStatus { get; set; }
+        public required string ActionButtonText { get; set; }
         public bool CanSendRequest { get; set; }
     }
 }

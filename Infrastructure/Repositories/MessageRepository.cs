@@ -20,7 +20,7 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Include(m => m.Sender)
-                .Where(m => m.ChatroomId == chatroomId && !m.IsDeleted.GetValueOrDefault())
+                .Where(m => m.ChatroomId == chatroomId && (m.IsDeleted == null || m.IsDeleted == false))
                 .OrderByDescending(m => m.SentAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -39,7 +39,7 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Include(m => m.Sender)
-                .Where(m => m.ParentMessageId == parentMessageId && !m.IsDeleted.GetValueOrDefault())
+                .Where(m => m.ParentMessageId == parentMessageId && (m.IsDeleted == null || m.IsDeleted == false))
                 .OrderBy(m => m.SentAt)
                 .ToListAsync();
         }
@@ -50,7 +50,7 @@ namespace linksy_backend_api.Repositories
                 m.ChatroomId == chatroomId && 
                 m.SenderId != userId &&
                 m.SentAt > lastReadAt &&
-                !m.IsDeleted.GetValueOrDefault());
+                (m.IsDeleted == null || m.IsDeleted == false));
         }
 
         public async Task<Message?> GetWithSenderAsync(Guid messageId)

@@ -180,7 +180,6 @@ namespace linksy_backend_api.Services
                     SenderId = request.SenderId,
                     SenderUsername = sender?.Username,
                     SenderFullname = sender?.Fullname,
-                    // ⭐ Sử dụng default avatar
                     SenderAvatar = DefaultAvatarHelper.GetAvatarOrDefault(sender?.Avatar, sender?.UserId),
                     ReceiverId = request.ReceiverId,
                     ReceiverUsername = receiver?.Username,
@@ -262,8 +261,6 @@ namespace linksy_backend_api.Services
 
             return new RelationshipDto { Status = "none" };
         }
-
-
         public async Task<List<FriendRequestResponse>> GetSentFriendRequestsAsync(Guid userId)
         {
             var requests = await _unitOfWork.FriendRequests.Query()

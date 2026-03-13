@@ -44,6 +44,8 @@ namespace linksy_backend_api.Repositories.IRepositories
 
         #region Specialized Repositories
         IChatroomRepository ChatroomRepository { get; }
+        IChatroomMemberRepository ChatroomMemberRepository { get; }
+        IGroupInvitationRepository GroupInvitationRepository { get; }
         IUserRepository UserRepository { get; }
         IMessageRepository MessageRepository { get; }
         IMemberPermissionRepository MemberPermissionRepository { get; }
@@ -51,6 +53,7 @@ namespace linksy_backend_api.Repositories.IRepositories
         IFriendshipRepository FriendshipRepository { get; }
         IBlockedUserRepository BlockedUserRepository { get; }
         INotificationRepository NotificationRepository { get; }
+        
         #endregion
 
         #region  Transaction methods

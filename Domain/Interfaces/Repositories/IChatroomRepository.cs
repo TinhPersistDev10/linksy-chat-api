@@ -8,11 +8,14 @@ namespace linksy_backend_api.Repositories.IRepositories
 {
     public interface IChatroomRepository : IRepository<Chatroom>
     {
-        Task<List<Chatroom>> GetUserChatroomsAsync(Guid userId, bool includeArchived = false);
-        Task<Chatroom?> GetWithMembersAsync(Guid chatroomId);
-        Task<Chatroom?> GetWithMessagesAsync(Guid chatroomId, int messageCount = 50);
+        // Chatroom queries
         Task<Chatroom?> GetDirectChatroomAsync(Guid user1Id, Guid user2Id);
-        Task<List<Chatroom>> GetActiveChatroomsAsync(Guid userId);
+        Task<Chatroom?> GetChatroomDetailsAsync(Guid chatroomId);
+        Task<List<Chatroom>> GetUserChatroomsAsync(Guid userId, bool includeArchived = false, string? roomType = null);
         Task<bool> IsUserMemberAsync(Guid chatroomId, Guid userId);
+        
+        // Task<Chatroom?> GetWithMembersAsync(Guid chatroomId);
+        // Task<Chatroom?> GetWithMessagesAsync(Guid chatroomId, int messageCount = 50);
+        // Task<List<Chatroom>> GetActiveChatroomsAsync(Guid userId);
     }
-} 
+}

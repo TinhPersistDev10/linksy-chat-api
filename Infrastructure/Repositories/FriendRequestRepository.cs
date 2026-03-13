@@ -39,7 +39,7 @@ namespace linksy_backend_api.Repositories
                         fr.ReceiverId == receiverId );
                         // && fr.Status == "pending"
             }
-            catch (Exception ex)
+            catch
             {
                 // _logger.LogError(ex, "Error in GetRequestAsync for sender {SenderId}, receiver {ReceiverId}", senderId, receiverId);
                 throw;
