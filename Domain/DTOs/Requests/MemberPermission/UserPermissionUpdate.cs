@@ -7,7 +7,7 @@ namespace linksy_backend_api.Domain.DTOs.Requests.MemberPermission
         [Required]
         public Guid UserId { get; set; }
 
-        [Required]
-        public UpdateMemberPermissionRequest Permissions { get; set; }
+       [Required(ErrorMessage = "Permissions is required")]
+        public UpdateMemberPermissionRequest Permissions { get; set; } = new();
     }
 }

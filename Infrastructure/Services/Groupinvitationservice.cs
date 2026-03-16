@@ -1,4 +1,5 @@
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.ChatroomDTO;
 using linksy_backend_api.Hubs;
@@ -47,7 +48,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
 
             bool isAdmin   = caller.MemberRole == "admin";
-            bool canInvite = isAdmin || await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, "CanInviteMembers");
+            bool canInvite = isAdmin || await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, PermissionType.CanInviteMembers);
             if (!canInvite)
                 throw new UnauthorizedAccessException("Bạn không có quyền mời thành viên.");
 

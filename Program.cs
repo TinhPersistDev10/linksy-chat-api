@@ -3,6 +3,7 @@ using System.Text;
 using linksy_backend_api.Core.Interfaces.Repositories;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Interfaces.Repositories;
+using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Hubs;
 using linksy_backend_api.Infrastructure.Filters;
 using linksy_backend_api.Infrastructure.Repositories;
@@ -218,6 +219,8 @@ builder.Services.AddScoped<IBlockedService, BlockedService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IGroupInvitationService, GroupInvitationService>();
+builder.Services.AddScoped<IChatroomAccessService, ChatroomAccessService>();
+builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 
 builder.Services.AddDirectoryBrowser();
 

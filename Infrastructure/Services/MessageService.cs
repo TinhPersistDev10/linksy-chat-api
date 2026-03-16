@@ -8,6 +8,7 @@ using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.SignalR;
 using linksy_backend_api.Infrastructure.Mappers;
 using Microsoft.EntityFrameworkCore;
+using linksy_backend_api.Domain.Enums;
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -79,7 +80,7 @@ namespace linksy_backend_api.Infrastructure.Services
             if (!isMember)
                 throw new UnauthorizedAccessException("Bạn không phải là thành viên của phòng chat này.");
 
-            var canSend = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, messageDto.ChatroomId, "CanSendMessages");
+            var canSend = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, messageDto.ChatroomId, PermissionType.CanSendMessages);
             if (!canSend)
                 throw new UnauthorizedAccessException("Bạn không có quyền gửi tin nhắn trong phòng chat này.");
 
@@ -165,7 +166,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
             bool isOwner   = message.SenderId == userId;
             bool canDelete = isOwner || await _unitOfWork.MemberPermissionRepository
-                .HasPermissionAsync(userId, message.ChatroomId, "CanDeleteMessages");
+                .HasPermissionAsync(userId, message.ChatroomId, PermissionType.CanDeleteMessages);
 
             if (!canDelete)
                 throw new UnauthorizedAccessException("Bạn không có quyền xóa tin nhắn này.");

@@ -13,6 +13,7 @@ using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.SignalR;
 using linksy_backend_api.Infrastructure.Mappers;
 using ChatroomMember = linksy_backend_api.Models.ChatroomMember;
+using linksy_backend_api.Domain.Enums;
 
 namespace linksy_backend_api.Services
 {
@@ -171,7 +172,7 @@ namespace linksy_backend_api.Services
 
             // Fix: đúng thứ tự param (chatroomId, userId)
             var caller = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId);
-            var canEdit = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, "CanEditGroupInfo");
+            var canEdit = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, PermissionType.CanEditGroupInfo );
 
             if (!canEdit && caller?.MemberRole != "admin")
                 throw new UnauthorizedAccessException("Bạn không có quyền chỉnh sửa thông tin nhóm.");
@@ -294,7 +295,7 @@ namespace linksy_backend_api.Services
 
             var caller = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId);
             bool isAdmin = caller?.MemberRole == "admin";
-            bool canInvite = isAdmin || await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, "CanInviteMembers");
+            bool canInvite = isAdmin || await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, PermissionType.CanInviteMembers);
             if (!canInvite) return new ApiResponseDto { Success = false, Message = "Bạn không có quyền thêm thành viên." };
 
             var addedCount = 0;
@@ -330,7 +331,7 @@ namespace linksy_backend_api.Services
                 ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
 
             bool isAdmin = caller.MemberRole == "admin";
-            bool canRemove = isAdmin || await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, "CanRemoveMembers");
+            bool canRemove = isAdmin || await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, PermissionType.CanRemoveMembers);
             if (!canRemove) throw new UnauthorizedAccessException("Bạn không có quyền xóa thành viên.");
 
             var target = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, memberId)

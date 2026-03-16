@@ -8,9 +8,9 @@
         public bool? CanSendMedia { get; set; }
         public bool? CanInviteMembers { get; set; }
         public bool? CanRemoveMembers { get; set; }
-        public bool? CanDeleteMembers { get; set; }
+        public bool? CanDeleteMessages { get; set; }
         public bool? CanEditGroupInfo { get; set; }
-        public bool? CanPinMessage { get; set; }
+        public bool? CanPinMessages { get; set; }
         public bool? CanManageCalls { get; set; }
 
     }
