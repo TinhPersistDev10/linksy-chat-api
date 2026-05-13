@@ -1,8 +1,10 @@
 using linksy_backend_api.Core.DTOs.Requests.Notifications;
 using linksy_backend_api.Core.DTOs.Responses.Notifications;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.Hubs;
+using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Mappers;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
@@ -16,18 +18,21 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConnectionManager _connectionManager;
         private readonly ILogger<NotificationService> _logger;
+        private readonly ICacheService _cache;
         private readonly IHubContext<ChatHub> _hubContext;
-
+        private record CountWrapper { public int Count { get; init; } }
         public NotificationService(
             IUnitOfWork unitOfWork,
             IConnectionManager connectionManager,
             ILogger<NotificationService> logger,
+            ICacheService cache,
             IHubContext<ChatHub> hubContext)
         {
-            _unitOfWork        = unitOfWork;
+            _unitOfWork = unitOfWork;
             _connectionManager = connectionManager;
-            _logger            = logger;
-            _hubContext        = hubContext;
+            _hubContext = hubContext;
+            _cache = cache;
+            _logger = logger;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -40,18 +45,18 @@ namespace linksy_backend_api.Infrastructure.Services
             {
                 var entity = new Notification
                 {
-                    NotificationId    = Guid.NewGuid(),
-                    UserId            = request.UserId,
-                    NotificationType  = request.NotificationType,
-                    Title             = request.Title,
-                    Body              = request.Body,
-                    RelatedEntityId   = request.RelatedEntityId,
+                    NotificationId = Guid.NewGuid(),
+                    UserId = request.UserId,
+                    NotificationType = request.NotificationType,
+                    Title = request.Title,
+                    Body = request.Body,
+                    RelatedEntityId = request.RelatedEntityId,
                     RelatedEntityType = request.RelatedEntityType,
-                    ActionUrl         = request.ActionUrl,
-                    ImageUrl          = request.ImageUrl,
-                    IsRead            = false,
-                    IsDeleted         = false,
-                    CreatedAt         = DateTime.UtcNow
+                    ActionUrl = request.ActionUrl,
+                    ImageUrl = request.ImageUrl,
+                    IsRead = false,
+                    IsDeleted = false,
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 await _unitOfWork.Notifications.AddAsync(entity);
@@ -72,18 +77,18 @@ namespace linksy_backend_api.Infrastructure.Services
             {
                 var entities = requests.Select(r => new Notification
                 {
-                    NotificationId    = Guid.NewGuid(),
-                    UserId            = r.UserId,
-                    NotificationType  = r.NotificationType,
-                    Title             = r.Title,
-                    Body              = r.Body,
-                    RelatedEntityId   = r.RelatedEntityId,
+                    NotificationId = Guid.NewGuid(),
+                    UserId = r.UserId,
+                    NotificationType = r.NotificationType,
+                    Title = r.Title,
+                    Body = r.Body,
+                    RelatedEntityId = r.RelatedEntityId,
                     RelatedEntityType = r.RelatedEntityType,
-                    ActionUrl         = r.ActionUrl,
-                    ImageUrl          = r.ImageUrl,
-                    IsRead            = false,
-                    IsDeleted         = false,
-                    CreatedAt         = DateTime.UtcNow
+                    ActionUrl = r.ActionUrl,
+                    ImageUrl = r.ImageUrl,
+                    IsRead = false,
+                    IsDeleted = false,
+                    CreatedAt = DateTime.UtcNow
                 }).ToList();
 
                 await _unitOfWork.Notifications.AddRangeAsync(entities);
@@ -133,16 +138,20 @@ namespace linksy_backend_api.Infrastructure.Services
 
         public async Task<int> GetUnreadCountAsync(Guid userId)
         {
-            try
-            {
-                return await _unitOfWork.NotificationRepository.GetUnreadCountAsync(userId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting unread count for user {UserId}", userId);
-                throw;
-            }
+            var cacheKey = CacheKeys.NotifUnreadCount(userId);
+
+            return await _cache.GetOrSetAsync(
+                cacheKey,
+                async () =>
+                {
+                    var count = await _unitOfWork.NotificationRepository.GetUnreadCountAsync(userId);
+                    // Wrap primitive in object vì GetOrSetAsync yêu cầu class
+                    return new CountWrapper { Count = count };
+                },
+                CacheKeys.ShortTtl)
+                .ContinueWith(t => t.Result.Count);
         }
+
 
         // ─────────────────────────────────────────────────────────────────────
         // MARK AS READ
@@ -163,7 +172,7 @@ namespace linksy_backend_api.Infrastructure.Services
             notification.ReadAt = DateTime.UtcNow;
             _unitOfWork.Notifications.Update(notification);
             await _unitOfWork.SaveChangesAsync();
-
+            await _cache.RemoveAsync(CacheKeys.NotifUnreadCount(userId));
             return new ApiResponseDto { Success = true, Message = "Đã đánh dấu đã đọc." };
         }
 
@@ -224,14 +233,14 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 var requests = recipientIds.Select(recipientId => new CreateNotificationRequest
                 {
-                    UserId            = recipientId,
-                    NotificationType  = "new_message",
-                    Title             = roomName,
-                    Body              = message.MessageText ?? string.Empty,
-                    RelatedEntityId   = message.ChatroomId,
+                    UserId = recipientId,
+                    NotificationType = "new_message",
+                    Title = roomName,
+                    Body = message.MessageText ?? string.Empty,
+                    RelatedEntityId = message.ChatroomId,
                     RelatedEntityType = "chatroom",
-                    ActionUrl         = $"/messages/{chatroom.ChatroomId}",
-                    ImageUrl          = chatroom.RoomType == "direct" ? sender.Avatar : chatroom.Avatar
+                    ActionUrl = $"/messages/{chatroom.ChatroomId}",
+                    ImageUrl = chatroom.RoomType == "direct" ? sender.Avatar : chatroom.Avatar
                 }).ToList();
 
                 await CreateBulkNotificationsAsync(requests);
@@ -252,14 +261,14 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 await CreateNotificationAsync(new CreateNotificationRequest
                 {
-                    UserId            = receiverId,
-                    NotificationType  = "friend_request",
-                    Title             = "Lời mời kết bạn mới",
-                    Body              = $"{sender.Fullname ?? sender.Username} đã gửi lời mời kết bạn",
-                    RelatedEntityId   = requestId,
+                    UserId = receiverId,
+                    NotificationType = "friend_request",
+                    Title = "Lời mời kết bạn mới",
+                    Body = $"{sender.Fullname ?? sender.Username} đã gửi lời mời kết bạn",
+                    RelatedEntityId = requestId,
                     RelatedEntityType = "friend_request",
-                    ActionUrl         = "/friends/requests",
-                    ImageUrl          = sender.Avatar
+                    ActionUrl = "/friends/requests",
+                    ImageUrl = sender.Avatar
                 });
             }
             catch (Exception ex)
@@ -278,14 +287,14 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 await CreateNotificationAsync(new CreateNotificationRequest
                 {
-                    UserId            = senderId,
-                    NotificationType  = "friend_accepted",
-                    Title             = "Yêu cầu kết bạn được chấp nhận",
-                    Body              = $"{accepter.Fullname ?? accepter.Username} đã chấp nhận lời mời kết bạn",
-                    RelatedEntityId   = friendshipId,
+                    UserId = senderId,
+                    NotificationType = "friend_accepted",
+                    Title = "Yêu cầu kết bạn được chấp nhận",
+                    Body = $"{accepter.Fullname ?? accepter.Username} đã chấp nhận lời mời kết bạn",
+                    RelatedEntityId = friendshipId,
                     RelatedEntityType = "friendship",
-                    ActionUrl         = $"/profile/{accepterId}",
-                    ImageUrl          = accepter.Avatar
+                    ActionUrl = $"/profile/{accepterId}",
+                    ImageUrl = accepter.Avatar
                 });
             }
             catch (Exception ex)
@@ -299,20 +308,20 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             try
             {
-                var inviter  = await _unitOfWork.Users.GetByIdAsync(invitedBy);
+                var inviter = await _unitOfWork.Users.GetByIdAsync(invitedBy);
                 var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId);
                 if (inviter == null || chatroom == null) return;
 
                 await CreateNotificationAsync(new CreateNotificationRequest
                 {
-                    UserId            = invitedUserId,
-                    NotificationType  = "group_invitation",
-                    Title             = "Lời mời vào nhóm",
-                    Body              = $"{inviter.Fullname ?? inviter.Username} đã mời bạn vào nhóm {chatroom.RoomName}",
-                    RelatedEntityId   = invitationId,
+                    UserId = invitedUserId,
+                    NotificationType = "group_invitation",
+                    Title = "Lời mời vào nhóm",
+                    Body = $"{inviter.Fullname ?? inviter.Username} đã mời bạn vào nhóm {chatroom.RoomName}",
+                    RelatedEntityId = invitationId,
                     RelatedEntityType = "group_invitation",
-                    ActionUrl         = $"/invitations/{invitationId}",
-                    ImageUrl          = chatroom.Avatar
+                    ActionUrl = $"/invitations/{invitationId}",
+                    ImageUrl = chatroom.Avatar
                 });
             }
             catch (Exception ex)

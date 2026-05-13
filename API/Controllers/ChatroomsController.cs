@@ -9,7 +9,7 @@ namespace linksy_backend_api.Controllers
 {
     [Authorize]
     [ApiController]
-    [Route("api/chatrooms")]
+    [Route("api/v1/chatrooms")]
     public class ChatroomsController : ControllerBase
     {
         private readonly IChatroomService _chatroomService;

@@ -588,9 +588,8 @@ namespace linksy_backend_api.Infrastructure.Services
                         Data = ""
                     };
                 }
-
-                var messageCount = user.Messages.Count;
-                var friendCount = user.FriendshipUser1s.Count + user.FriendshipUser2s.Count;
+                var messageCount = await _unitOfWork.Messages.CountAsync(m => m.SenderId == userId);
+                var friendCount = await _unitOfWork.Friendships.CountAsync(f => f.User1Id == userId || f.User2Id == userId);
 
                 var userDetail = new AdminUserDetailDto
                 {

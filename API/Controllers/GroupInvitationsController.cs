@@ -9,7 +9,7 @@ namespace linksy_backend_api.Controllers
 {
     [Authorize]
     [ApiController]
-    [Route("api/invitations")]
+    [Route("api/v1/invitations")]
     public class GroupInvitationsController : ControllerBase
     {
         private readonly IGroupInvitationService _invitationService;

@@ -201,7 +201,13 @@ builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<IBlockedUserRepository, BlockedUserRepository>();
 builder.Services.AddScoped<IGroupInvitationRepository, GroupInvitationRepository>();
 builder.Services.AddScoped<IMemberPermissionRepository, MemberPermissionRepository>();
-
+builder.Services.AddScoped<IMessageReactionRepository, MessageReactionRepository>();
+builder.Services.AddScoped<IMessageDeliveryRepository, MessageDeliveryRepository>();
+builder.Services.AddScoped<IMessageAttachmentRepository, MessageAttachmentRepository>();
+builder.Services.AddScoped<IUserSettingsRepository, UserSettingsRepository>();
+builder.Services.AddScoped<INotificationSettingsRepository, NotificationSettingsRepository>();
+builder.Services.AddScoped<IPrivacySettingsRepository, PrivacySettingsRepository>();
+builder.Services.AddScoped<IUserStatusRepository, UserStatusRepository>();
 // Generic Repository for models without specific repository
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
@@ -221,12 +227,33 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IGroupInvitationService, GroupInvitationService>();
 builder.Services.AddScoped<IChatroomAccessService, ChatroomAccessService>();
 builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
-
+builder.Services.AddScoped<IReactionService, ReactionService>();
+ builder.Services.AddScoped<IUserSettingsService,  UserSettingsService>();
 builder.Services.AddDirectoryBrowser();
 
 // Add Memory Cache
 builder.Services.AddMemoryCache();
+// ── Redis Cache ───────────────────────────────────────────────────────────────
+var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled", true);
+var redisConn    = builder.Configuration["Redis:ConnectionString"];
 
+if (redisEnabled && !string.IsNullOrEmpty(redisConn))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration   = redisConn;
+        options.InstanceName    = builder.Configuration["Redis:InstanceName"] ?? "linksy:";
+    });
+    Console.WriteLine("✅ Redis cache enabled");
+}
+else
+{
+    // Fallback về in-memory khi Redis không có sẵn (dev/test)
+    builder.Services.AddDistributedMemoryCache();
+    Console.WriteLine("⚠️  Redis disabled — using in-memory cache");
+}
+
+builder.Services.AddScoped<ICacheService, CacheService>();
 // Response compression (optional, good for SignalR)
 builder.Services.AddResponseCompression(opts =>
 {

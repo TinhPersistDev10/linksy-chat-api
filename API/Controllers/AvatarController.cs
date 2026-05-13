@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/[controller]")]
     [Authorize]
     public class AvatarController : ControllerBase
     {

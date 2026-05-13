@@ -35,27 +35,33 @@ namespace linksy_backend_api.Infrastructure.Services
             try
             {
                 if (!IsValidImage(file))
-                {
                     throw new InvalidOperationException("File không hợp lệ");
-                }
 
                 var processedImage = await ProcessImageAsync(file);
                 using var stream = new MemoryStream(processedImage);
+
+                // ── Dùng tên file unique để tránh conflict ──────────────────────
+                var publicId = $"linksy/{folder}/{Guid.NewGuid()}";
+
                 var uploadParams = new CloudinaryDotNet.Actions.ImageUploadParams
                 {
                     File = new FileDescription(file.FileName, stream),
-                    Folder = $"linksy/{folder}",
+                    PublicId = publicId,          // ← explicit publicId, bỏ Folder
+                    Overwrite = true,
                     Transformation = new Transformation()
-                    .Width(400).Height(400)
-                    .Crop("fill") 
-                    .Gravity("face")
-                    .Quality("auto:good")
-                    .FetchFormat("auto"),
-                    Overwrite = true
+                        .Width(400).Height(400)
+                        .Crop("fill")
+                        .Gravity("face")
+                        .Quality("auto:good")
+                        .FetchFormat("auto"),
+                    // ← KHÔNG đặt UploadPreset nếu dùng API Key/Secret (signed upload)
                 };
+
                 var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
                 if (uploadResult.Error != null)
                     throw new Exception($"Cloudinary upload error: {uploadResult.Error.Message}");
+
                 return uploadResult.SecureUrl.ToString();
             }
             catch (Exception ex)

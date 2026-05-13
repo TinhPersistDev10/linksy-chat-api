@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.AdminDTOs;
 using linksy_backend_api.Core.DTOs.Responses.Users;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.DTOs.UserDTO;
+using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Infrastructure.Mappers;
 using linksy_backend_api.Models;
@@ -17,24 +19,34 @@ namespace linksy_backend_api.Infrastructure.Services
     {
 
         private readonly LinksyDbContext _context;
-        private readonly ILogger<UserService> _logger;
         private readonly IFileService _fileService;
-        public UserService(LinksyDbContext context, ILogger<UserService> logger, IFileService fileService)
+        private readonly ICacheService _cache;       // ← thêm
+        private readonly ILogger<UserService> _logger;
+
+        public UserService(
+            LinksyDbContext context,
+            IFileService fileService,
+            ICacheService cache,                     // ← thêm
+            ILogger<UserService> logger)
         {
             _context = context;
-            _logger = logger;
             _fileService = fileService;
+            _cache = cache;
+            _logger = logger;
         }
         //GET USER CURRENT 
         public async Task<UserInfoDto> GetCurrentUserAsync(Guid userId)
         {
-            var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
-            if (user == null)
-            {
-                throw new Exception("User not found");
-            }
+            var cacheKey = CacheKeys.UserProfile(userId);
 
-            return UserMapper.ToResponse(user);
+            return await _cache.GetOrSetAsync(cacheKey, async () =>
+            {
+                var user = await _context.Users.AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.UserId == userId)
+                    ?? throw new KeyNotFoundException("User not found");
+
+                return UserMapper.ToResponse(user);
+            }, CacheKeys.MediumTtl);
         }
         //EDIT USER
         public async Task<UserInfoDto> UpdateUserAsync(Guid userId, UpdateUserByAdminDto updateUserDto)
@@ -81,6 +93,7 @@ namespace linksy_backend_api.Infrastructure.Services
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("User {UserId} profile updated", userId);
+            await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
             return UserMapper.ToResponse(user);
         }
         //UPDATE AVATAR
@@ -108,7 +121,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 user.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
-
+                await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
                 return new AvatarResponse
                 {
                     Success = true,

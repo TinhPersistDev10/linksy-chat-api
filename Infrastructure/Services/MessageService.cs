@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.SignalR;
 using linksy_backend_api.Infrastructure.Mappers;
 using Microsoft.EntityFrameworkCore;
 using linksy_backend_api.Domain.Enums;
+using linksy_backend_api.Infrastructure.Cache;
+using linksy_backend_api.Domain.Interfaces.Services;
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -18,6 +20,7 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly ILogger<MessageService> _logger;
         private readonly IConnectionManager _connectionManager;
         private readonly IHubContext<ChatHub> _hubContext;
+        private readonly ICacheService _cache; 
         private readonly INotificationService _messageNotificationService;
 
         public MessageService(
@@ -25,13 +28,15 @@ namespace linksy_backend_api.Infrastructure.Services
             ILogger<MessageService> logger,
             IConnectionManager connectionManager,
             IHubContext<ChatHub> hubContext,
-            INotificationService messageNotificationService)
+            INotificationService messageNotificationService, 
+            ICacheService cache)
         {
-            _unitOfWork                  = unitOfWork;
-            _logger                      = logger;
-            _connectionManager           = connectionManager;
-            _hubContext                  = hubContext;
-            _messageNotificationService  = messageNotificationService;
+            _unitOfWork = unitOfWork;
+            _logger = logger;
+            _connectionManager = connectionManager;
+            _hubContext = hubContext;
+            _messageNotificationService = messageNotificationService;
+            _cache = cache;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -39,7 +44,18 @@ namespace linksy_backend_api.Infrastructure.Services
         // ─────────────────────────────────────────────────────────────────────
 
         public async Task<IEnumerable<MessageResponse>> GetMessagesAsync(Guid userId, Guid chatroomId, int page = 1, int pageSize = 50)
-        {
+        { // Chỉ cache page 1 (tin nhắn mới nhất) — các page cũ không cần realtime
+            if (page == 1)
+            {
+                var cacheKey = CacheKeys.Messages(chatroomId, page);
+                var cached = await _cache.GetAsync<List<MessageResponse>>(cacheKey);
+                if (cached is not null)
+                {
+                    // Cập nhật IsOwn theo userId hiện tại (không lưu trong cache)
+                    cached.ForEach(m => m.IsOwn = m.SenderId == userId);
+                    return cached;
+                }
+            }
             var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(
                 rm => rm.ChatroomId == chatroomId && rm.UserId == userId && rm.LeftAt == null);
 
@@ -54,13 +70,16 @@ namespace linksy_backend_api.Infrastructure.Services
                 result.Add(await MessageMapper.ToResponseAsync(message, _unitOfWork, userId));
 
             result.Reverse(); // tin cũ ở trên, tin mới ở dưới
+            if (page == 1)
+                await _cache.SetAsync(CacheKeys.Messages(chatroomId, 1), result, CacheKeys.ShortTtl);
+
             return result;
         }
 
         public async Task<List<MessageResponse>> GetRepliesAsync(Guid messageId)
         {
             var replies = await _unitOfWork.MessageRepository.GetRepliesAsync(messageId);
-            var result  = new List<MessageResponse>();
+            var result = new List<MessageResponse>();
             foreach (var r in replies)
                 result.Add(await MessageMapper.ToResponseAsync(r, _unitOfWork));
             return result;
@@ -97,23 +116,23 @@ namespace linksy_backend_api.Infrastructure.Services
             {
                 var message = new Message
                 {
-                    MessageId       = Guid.NewGuid(),
-                    ChatroomId      = messageDto.ChatroomId,
-                    SenderId        = userId,
-                    MessageText     = messageDto.MessageText,
-                    MessageType     = messageDto.MessageType,
+                    MessageId = Guid.NewGuid(),
+                    ChatroomId = messageDto.ChatroomId,
+                    SenderId = userId,
+                    MessageText = messageDto.MessageText,
+                    MessageType = messageDto.MessageType,
                     ParentMessageId = messageDto.ParentMessageId,
-                    SentAt          = DateTime.UtcNow,
-                    IsEdited        = false,
-                    IsDeleted       = false
+                    SentAt = DateTime.UtcNow,
+                    IsEdited = false,
+                    IsDeleted = false
                 };
                 await _unitOfWork.Messages.AddAsync(message);
 
                 var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(messageDto.ChatroomId);
                 if (chatroom != null)
                 {
-                    chatroom.LastMessageId  = message.MessageId;
-                    chatroom.LastMessageAt  = message.SentAt;
+                    chatroom.LastMessageId = message.MessageId;
+                    chatroom.LastMessageAt = message.SentAt;
                     chatroom.LastActivityAt = message.SentAt;
                     _unitOfWork.Chatrooms.Update(chatroom);
                 }
@@ -122,6 +141,8 @@ namespace linksy_backend_api.Infrastructure.Services
                 await _unitOfWork.CommitTransactionAsync();
 
                 var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
+                await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1));
+
                 return response;
             }
             catch (Exception ex)
@@ -148,8 +169,8 @@ namespace linksy_backend_api.Infrastructure.Services
                 throw new InvalidOperationException("Không thể sửa tin nhắn đã xóa.");
 
             message.MessageText = newText;
-            message.IsEdited    = true;
-            message.EditedAt    = DateTime.UtcNow;
+            message.IsEdited = true;
+            message.EditedAt = DateTime.UtcNow;
             _unitOfWork.Messages.Update(message);
             await _unitOfWork.SaveChangesAsync();
 
@@ -164,7 +185,7 @@ namespace linksy_backend_api.Infrastructure.Services
             var message = await _unitOfWork.Messages.GetByIdAsync(messageId)
                 ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
 
-            bool isOwner   = message.SenderId == userId;
+            bool isOwner = message.SenderId == userId;
             bool canDelete = isOwner || await _unitOfWork.MemberPermissionRepository
                 .HasPermissionAsync(userId, message.ChatroomId, PermissionType.CanDeleteMessages);
 
@@ -201,7 +222,7 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             try
             {
-                var sender   = await _unitOfWork.Users.GetByIdAsync(senderId);
+                var sender = await _unitOfWork.Users.GetByIdAsync(senderId);
                 var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(message.ChatroomId);
 
                 if (sender == null || chatroom == null)

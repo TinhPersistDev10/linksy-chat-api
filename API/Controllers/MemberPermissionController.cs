@@ -18,7 +18,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace linksy_backend_api.API.Controllers
 {
     [Authorize]
-    [Route("api/chatrooms/{chatroomId:guid}/permissions")]
+    [Route("api/v1/chatrooms/{chatroomId:guid}/permissions")]
     [Produces("application/json")]
     public class MemberPermissionController : BaseApiController  // ✅ kế thừa BaseApiController
     {

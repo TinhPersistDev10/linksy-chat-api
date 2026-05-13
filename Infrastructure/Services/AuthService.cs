@@ -386,7 +386,7 @@ namespace linksy_backend_api.Services
 
             // Đánh dấu các OTP cũ là expired
             var oldOtps = await _context.EmailOtps
-                .Where(o => o.Email == request.Email && o.Purpose == request.Purpose && (!o.IsUsed ?? false))
+                .Where(o => o.Email == request.Email && o.Purpose == request.Purpose && !o.IsUsed !=true)
                 .ToListAsync();
 
             foreach (var oldOtp in oldOtps)
@@ -522,7 +522,7 @@ namespace linksy_backend_api.Services
                 };
                 await _context.AccessTokens.AddAsync(accessTokenEntity);
                 await _context.SaveChangesAsync();
-
+                await transaction.CommitAsync();
                 return new VerifyEmailResponse
                 {
                     Success = true,

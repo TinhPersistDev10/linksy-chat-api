@@ -12,7 +12,7 @@ namespace linksy_backend_api.Controllers
 {
     [ApiController]
     [Authorize]
-    [Route("api/messages")]
+    [Route("api/v1/messages")]
     [Produces("application/json")]
     public class MessageController : ControllerBase
     {
