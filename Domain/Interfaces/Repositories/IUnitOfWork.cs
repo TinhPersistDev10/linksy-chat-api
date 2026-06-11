@@ -64,6 +64,7 @@ namespace linksy_backend_api.Repositories.IRepositories
         INotificationSettingsRepository NotificationSettingsRepository { get; }
         IPrivacySettingsRepository PrivacySettingsRepository { get; }
         IUserStatusRepository UserStatusRepository { get; }
+        ITokenRepository TokenRepository { get; }
         #endregion
 
         #region Transaction methods

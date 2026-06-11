@@ -14,6 +14,9 @@ using Microsoft.AspNetCore.SignalR;
 using linksy_backend_api.Infrastructure.Mappers;
 using ChatroomMember = linksy_backend_api.Models.ChatroomMember;
 using linksy_backend_api.Domain.Enums;
+using linksy_backend_api.Infrastructure.Cache;
+using SixLabors.ImageSharp.Web.Caching;
+using linksy_backend_api.Domain.Interfaces.Services;
 
 namespace linksy_backend_api.Services
 {
@@ -24,19 +27,21 @@ namespace linksy_backend_api.Services
         private readonly IConnectionManager _connectionManager;
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IFileService _fileService;
-
+        private readonly ICacheService _cached;
         public ChatroomService(
             IUnitOfWork unitOfWork,
             ILogger<ChatroomService> logger,
             IConnectionManager connectionManager,
             IHubContext<ChatHub> hubContext,
-            IFileService fileService)
+            IFileService fileService,
+            ICacheService cached)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
             _connectionManager = connectionManager;
             _hubContext = hubContext;
             _fileService = fileService;
+            _cached = cached;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -140,10 +145,16 @@ namespace linksy_backend_api.Services
 
         public async Task<List<ChatroomResponseDto>> GetUserChatroomsAsync(Guid userId, bool includeArchived = false, string? roomType = null)
         {
+            var cacheKey = CacheKeys.ChatroomList(userId, includeArchived, roomType);
+
+            var cached = await _cached.GetAsync<List<ChatroomResponseDto>>(cacheKey);
+            // ////
             var chatrooms = await _unitOfWork.ChatroomRepository.GetUserChatroomsAsync(userId, includeArchived, roomType);
+
             var result = new List<ChatroomResponseDto>();
             foreach (var c in chatrooms)
                 result.Add(await ChatroomMapper.ToResponseAsync(c, userId, _unitOfWork));
+            await _cached.SetAsync(cacheKey, result, CacheKeys.ShortTtl);
             return result;
         }
 
@@ -172,7 +183,7 @@ namespace linksy_backend_api.Services
 
             // Fix: đúng thứ tự param (chatroomId, userId)
             var caller = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId);
-            var canEdit = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, PermissionType.CanEditGroupInfo );
+            var canEdit = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, PermissionType.CanEditGroupInfo);
 
             if (!canEdit && caller?.MemberRole != "admin")
                 throw new UnauthorizedAccessException("Bạn không có quyền chỉnh sửa thông tin nhóm.");
@@ -289,34 +300,59 @@ namespace linksy_backend_api.Services
 
         public async Task<ApiResponseDto> AddMembersAsync(Guid userId, Guid chatroomId, AddMembersRequest request)
         {
+            //get chatroom muon add member
             var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId);
+            //chatroom ko ton tai
             if (chatroom == null) return new ApiResponseDto { Success = false, Message = "Chatroom không tồn tại." };
+
             if (chatroom.RoomType == "direct") return new ApiResponseDto { Success = false, Message = "Không thể thêm thành viên vào chat 1-1." };
 
             var caller = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId);
             bool isAdmin = caller?.MemberRole == "admin";
-            bool canInvite = isAdmin || await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, chatroomId, PermissionType.CanInviteMembers);
+            bool canInvite = isAdmin || await _unitOfWork.MemberPermissionRepository
+                .HasPermissionAsync(userId, chatroomId, PermissionType.CanInviteMembers);
             if (!canInvite) return new ApiResponseDto { Success = false, Message = "Bạn không có quyền thêm thành viên." };
 
-            var addedCount = 0;
-            foreach (var memberId in request.MemberIds)
+            var validUserIds = await _unitOfWork.UserRepository.GetExistingUserIdsAsync(request.MemberIds);
+            var addedMemberIds = new List<Guid>();
+            foreach (var memberId in validUserIds)
             {
-                if (await _unitOfWork.ChatroomMemberRepository.HasActiveMemberAsync(chatroomId, memberId)) continue;
-                if (await _unitOfWork.Users.GetByIdAsync(memberId) == null) continue;
+                if (await _unitOfWork.ChatroomMemberRepository.HasActiveMemberAsync(chatroomId, memberId))
+                    continue;
 
-                var newMember = new ChatroomMember { MemberId = Guid.NewGuid(), ChatroomId = chatroomId, UserId = memberId, MemberRole = "member", AddedBy = userId, JoinedAt = DateTime.UtcNow };
+                var newMember = CreateMember(chatroomId, memberId, "member", addedBy: userId);
                 await _unitOfWork.ChatroomMembers.AddAsync(newMember);
                 await _unitOfWork.MemberPermissionRepository.CreateDefaultAsync(newMember.MemberId, isAdmin: false);
-                addedCount++;
-
-                var conns = await _connectionManager.GetConnectionsAsync(memberId);
-                if (conns.Any())
-                    await _hubContext.Clients.Clients(conns).SendAsync("AddedToGroup", await MapToChatroomResponseAsync(chatroom, memberId));
+                addedMemberIds.Add(memberId);
             }
+            if (addedMemberIds.Count == 0)
+                return new ApiResponseDto { Success = true, Message = "Không có thành viên mới nào được thêm." };
+
 
             await _unitOfWork.SaveChangesAsync();
-            await _hubContext.Clients.Group(chatroomId.ToString()).SendAsync("MembersAdded", new { ChatroomId = chatroomId, AddedBy = userId, Count = addedCount });
-            return new ApiResponseDto { Success = true, Message = $"Đã thêm {addedCount} thành viên." };
+            await InvalidateChatroomListCacheAsync(addedMemberIds.ToArray());
+
+            // SignalR sau khi DB đã có data
+            var notifyTasks = addedMemberIds.Select(async memberId =>
+            {
+                var conns = await _connectionManager.GetConnectionsAsync(memberId);
+                if (conns.Any())
+                    await _hubContext.Clients.Clients(conns)
+                        .SendAsync("AddedToGroup", await MapToChatroomResponseAsync(chatroom, memberId));
+            });
+            await Task.WhenAll(notifyTasks);
+
+            try
+            {
+                await _hubContext.Clients.Group(chatroomId.ToString())
+                    .SendAsync("MembersAdded", new { ChatroomId = chatroomId, AddedBy = userId, Count = addedMemberIds.Count });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SignalR failed for MembersAdded. ChatroomId={ChatroomId}", chatroomId);
+            }
+
+            return new ApiResponseDto { Success = true, Message = $"Đã thêm {addedMemberIds.Count} thành viên." };
         }
 
         public async Task<ApiResponseDto> RemoveMemberAsync(Guid userId, Guid chatroomId, Guid memberId)
@@ -356,43 +392,81 @@ namespace linksy_backend_api.Services
         {
             var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId)
                 ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");
-            if (chatroom.RoomType == "direct") return new ApiResponseDto { Success = false, Message = "Không thể rời khỏi chat 1-1." };
+            if (chatroom.RoomType == "direct")
+                return new ApiResponseDto { Success = false, Message = "Không thể rời khỏi chat 1-1." };
 
             var member = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId)
                 ?? throw new InvalidOperationException("Bạn không phải thành viên của phòng chat này.");
 
-            if (member.MemberRole == "admin" && !await _unitOfWork.ChatroomMemberRepository.HasOtherAdminAsync(chatroomId, userId))
+            // FIX: wrap toàn bộ trong 1 transaction — tránh inconsistent state
+            await _unitOfWork.BeginTransactionAsync();
+            try
             {
-                var next = await _unitOfWork.ChatroomMemberRepository.GetNextMemberToPromoteAsync(chatroomId, userId);
-                if (next == null)
+                if (member.MemberRole == "admin" &&
+                    !await _unitOfWork.ChatroomMemberRepository.HasOtherAdminAsync(chatroomId, userId))
                 {
-                    chatroom.IsActive = false; _unitOfWork.Chatrooms.Update(chatroom);
-                    member.LeftAt = DateTime.UtcNow; _unitOfWork.ChatroomMembers.Update(member);
-                    await _unitOfWork.SaveChangesAsync();
-                    return new ApiResponseDto { Success = true, Message = "Đã rời và giải tán phòng chat." };
+                    var next = await _unitOfWork.ChatroomMemberRepository
+                        .GetNextMemberToPromoteAsync(chatroomId, userId);
+
+                    if (next == null)
+                    {
+                        // Không còn ai → giải tán phòng
+                        chatroom.IsActive = false;
+                        _unitOfWork.Chatrooms.Update(chatroom);
+                        member.LeftAt = DateTime.UtcNow;
+                        _unitOfWork.ChatroomMembers.Update(member);
+                        await _unitOfWork.CommitTransactionAsync();
+
+                        await InvalidateChatroomListCacheAsync(userId);
+                        return new ApiResponseDto { Success = true, Message = "Đã rời và giải tán phòng chat." };
+                    }
+
+                    // Promote member tiếp theo lên admin
+                    next.MemberRole = "admin";
+                    _unitOfWork.ChatroomMembers.Update(next);
+
+                    var nextPerm = await _unitOfWork.MemberPermissionRepository.GetByMemberIdAsync(next.MemberId);
+                    if (nextPerm != null)
+                    {
+                        nextPerm.CanInviteMembers = true;
+                        nextPerm.CanRemoveMembers = true;
+                        nextPerm.CanEditGroupInfo = true;
+                        nextPerm.CanPinMessages = true;
+                        nextPerm.CanManageCalls = true;
+                        await _unitOfWork.MemberPermissionRepository.UpdateAsync(nextPerm);
+                    }
+
+                    // Notify member được promote (trong try để lỗi SignalR không block)
+                    _ = NotifyPromotedMemberAsync(next.UserId, chatroomId);
                 }
 
-                next.MemberRole = "admin";
-                _unitOfWork.ChatroomMembers.Update(next);
-
-                var nextPerm = await _unitOfWork.MemberPermissionRepository.GetByMemberIdAsync(next.MemberId);
-                if (nextPerm != null)
-                {
-                    nextPerm.CanInviteMembers = true; nextPerm.CanRemoveMembers = true;
-                    nextPerm.CanEditGroupInfo = true; nextPerm.CanPinMessages = true;
-                    nextPerm.CanManageCalls = true;
-                    await _unitOfWork.MemberPermissionRepository.UpdateAsync(nextPerm);
-                }
+                member.LeftAt = DateTime.UtcNow;
+                _unitOfWork.ChatroomMembers.Update(member);
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Error leaving chatroom. UserId={UserId}, ChatroomId={ChatroomId}",
+                    userId, chatroomId);
+                throw;
             }
 
-            member.LeftAt = DateTime.UtcNow;
-            _unitOfWork.ChatroomMembers.Update(member);
-            await _unitOfWork.SaveChangesAsync();
+            await InvalidateChatroomListCacheAsync(userId);
 
-            await _hubContext.Clients.Group(chatroomId.ToString()).SendAsync("MemberLeft", new { ChatroomId = chatroomId, UserId = userId });
-            var userConns = await _connectionManager.GetConnectionsAsync(userId);
-            if (userConns.Any())
-                await _hubContext.Clients.Clients(userConns).SendAsync("RemovedFromGroup", chatroomId);
+            try
+            {
+                await _hubContext.Clients.Group(chatroomId.ToString())
+                    .SendAsync("MemberLeft", new { ChatroomId = chatroomId, UserId = userId });
+
+                var userConns = await _connectionManager.GetConnectionsAsync(userId);
+                if (userConns.Any())
+                    await _hubContext.Clients.Clients(userConns).SendAsync("RemovedFromGroup", chatroomId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SignalR failed for MemberLeft. UserId={UserId}", userId);
+            }
 
             return new ApiResponseDto { Success = true, Message = "Đã rời phòng chat." };
         }
@@ -405,18 +479,64 @@ namespace linksy_backend_api.Services
             if (!await _unitOfWork.ChatroomRepository.IsUserMemberAsync(chatroomId, userId))
                 throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
 
-            chatroom.IsArchived = isArchived; chatroom.UpdatedAt = DateTime.UtcNow;
+            chatroom.IsArchived = isArchived;
+            chatroom.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Chatrooms.Update(chatroom);
             await _unitOfWork.SaveChangesAsync();
 
-            return new ApiResponseDto { Success = true, Message = isArchived ? "Đã lưu trữ phòng chat." : "Đã bỏ lưu trữ phòng chat." };
+            // Invalidate cả 2 variant (archived và non-archived)
+            await InvalidateChatroomListCacheAsync(userId);
+
+            return new ApiResponseDto
+            {
+                Success = true,
+                Message = isArchived ? "Đã lưu trữ phòng chat." : "Đã bỏ lưu trữ phòng chat."
+            };
         }
 
         // ─────────────────────────────────────────────────────────────────────
         // ─────────────────────────────────────────────────────────────────────
         // MAPPER — delegate to ChatroomMapper
         // ─────────────────────────────────────────────────────────────────────
-
+        private static ChatroomMember CreateMember(
+            Guid chatroomId, Guid userId, string role, Guid? addedBy = null) => new()
+            {
+                MemberId = Guid.NewGuid(),
+                ChatroomId = chatroomId,
+                UserId = userId,
+                MemberRole = role,
+                AddedBy = addedBy,
+                JoinedAt = DateTime.UtcNow
+            };
+        // Invalidate ChatroomList cache cho nhiều variant (includeArchived + roomType)
+        private async Task InvalidateChatroomListCacheAsync(params Guid[] userIds)
+        {
+            var tasks = userIds.SelectMany(uid => new[]
+            {
+                _cached.RemoveAsync(CacheKeys.ChatroomList(uid, false, null)),
+                _cached.RemoveAsync(CacheKeys.ChatroomList(uid, true, null)),
+                _cached.RemoveAsync(CacheKeys.ChatroomList(uid, false, "direct")),
+                _cached.RemoveAsync(CacheKeys.ChatroomList(uid, false, "group")),
+                _cached.RemoveAsync(CacheKeys.ChatroomList(uid, true, "direct")),
+                _cached.RemoveAsync(CacheKeys.ChatroomList(uid, true, "group")),
+            });
+            await Task.WhenAll(tasks);
+        }
+        // Fire-and-forget notify cho member được promote — không block main flow
+        private async Task NotifyPromotedMemberAsync(Guid userId, Guid chatroomId)
+        {
+            try
+            {
+                var conns = await _connectionManager.GetConnectionsAsync(userId);
+                if (conns.Any())
+                    await _hubContext.Clients.Clients(conns)
+                        .SendAsync("PromotedToAdmin", new { ChatroomId = chatroomId });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SignalR failed for PromotedToAdmin. UserId={UserId}", userId);
+            }
+        }
         private Task<ChatroomResponseDto> MapToChatroomResponseAsync(Chatroom chatroom, Guid currentUserId)
             => ChatroomMapper.ToResponseAsync(chatroom, currentUserId, _unitOfWork);
     }

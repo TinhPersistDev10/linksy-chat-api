@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
-    [Route("api/v1/[controller]")]
+    [Route("api/v1/notifications")]
     [Authorize]
     public class NotificationsController : ControllerBase
     {

@@ -94,8 +94,10 @@ namespace linksy_backend_api.Infrastructure.Services
                 await _unitOfWork.Notifications.AddRangeAsync(entities);
                 await _unitOfWork.SaveChangesAsync();
 
-                foreach (var entity in entities)
-                    await SendRealTimeAsync(entity);
+                // foreach (var entity in entities)
+                //     await SendRealTimeAsync(entity);
+                var realtimeTasks = entities.Select(entity => SendRealTimeAsync(entity));
+                await Task.WhenAll(realtimeTasks);
             }
             catch (Exception ex)
             {
@@ -140,16 +142,16 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             var cacheKey = CacheKeys.NotifUnreadCount(userId);
 
-            return await _cache.GetOrSetAsync(
+            var wrapper = await _cache.GetOrSetAsync(
                 cacheKey,
                 async () =>
-                {
-                    var count = await _unitOfWork.NotificationRepository.GetUnreadCountAsync(userId);
-                    // Wrap primitive in object vì GetOrSetAsync yêu cầu class
-                    return new CountWrapper { Count = count };
-                },
-                CacheKeys.ShortTtl)
-                .ContinueWith(t => t.Result.Count);
+                    new CountWrapper
+                    {
+                        Count = await _unitOfWork.NotificationRepository.GetUnreadCountAsync(userId)
+                    },
+                CacheKeys.ShortTtl);
+            return wrapper.Count;
+
         }
 
 
@@ -179,7 +181,7 @@ namespace linksy_backend_api.Infrastructure.Services
         public async Task<ApiResponseDto> MarkAllAsReadAsync(Guid userId)
         {
             await _unitOfWork.NotificationRepository.MarkAllAsReadAsync(userId);
-            await _unitOfWork.SaveChangesAsync();
+            await _cache.RemoveAsync(CacheKeys.NotifUnreadCount(userId));
             return new ApiResponseDto { Success = true, Message = "Đã đánh dấu tất cả đã đọc." };
         }
 
@@ -198,23 +200,25 @@ namespace linksy_backend_api.Infrastructure.Services
             notification.IsDeleted = true;
             _unitOfWork.Notifications.Update(notification);
             await _unitOfWork.SaveChangesAsync();
-
+            if (notification.IsRead != true) await _cache.RemoveAsync(CacheKeys.NotifUnreadCount(userId));
             return new ApiResponseDto { Success = true, Message = "Đã xóa thông báo." };
         }
 
         public async Task<ApiResponseDto> DeleteAllNotificationsAsync(Guid userId)
         {
-            var notifications = await _unitOfWork.Notifications.FindAsync(
-                n => n.UserId == userId && (n.IsDeleted == null || n.IsDeleted == false));
-
-            if (!notifications.Any())
-                return new ApiResponseDto { Success = true, Message = "Không có thông báo nào." };
-
-            foreach (var n in notifications)
-                n.IsDeleted = true;
-
-            _unitOfWork.Notifications.UpdateRange(notifications);
-            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                await _unitOfWork.NotificationRepository.SoftDeleteAllSync(userId);
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch (System.Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Error deleting all notifications for UserId={UserId}", userId);
+                throw;
+            }
+            await _cache.RemoveAsync(CacheKeys.NotifUnreadCount(userId));
 
             return new ApiResponseDto { Success = true, Message = "Đã xóa tất cả thông báo." };
         }
@@ -236,7 +240,14 @@ namespace linksy_backend_api.Infrastructure.Services
                     UserId = recipientId,
                     NotificationType = "new_message",
                     Title = roomName,
-                    Body = message.MessageText ?? string.Empty,
+                    // Body = message.MessageText ?? string.Empty,
+                    Body = message.MessageType switch
+                    {
+                        "image" => "📷 Đã gửi một ảnh",
+                        "file" => "📎 Đã gửi một file",
+                        "voice" => "🎤 Đã gửi tin nhắn thoại",
+                        _ => message.MessageText ?? string.Empty
+                    },
                     RelatedEntityId = message.ChatroomId,
                     RelatedEntityType = "chatroom",
                     ActionUrl = $"/messages/{chatroom.ChatroomId}",

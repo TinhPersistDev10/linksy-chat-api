@@ -33,13 +33,23 @@ namespace linksy_backend_api.Infrastructure.Services
 
         public async Task<T?> GetAsync<T>(string key) where T : class
         {
-            if (!_enabled) return null;
-
+            if (!_enabled)
+            {
+                _logger.LogDebug("Cache disabled. Key={Key}", key);
+                return null;
+            }
             try
             {
-                var data = await _cache.GetStringAsync(key);
-                if (data is null) return null;
+                _logger.LogDebug("Cache GET. Key={Key}", key);
 
+
+                var data = await _cache.GetStringAsync(key);
+                if (data is null)
+                {
+                    _logger.LogDebug("Cache MISS. Key={Key}", key);
+                    return null;
+                }
+                _logger.LogDebug("Cache HIT. Key={Key}", key);
                 return JsonSerializer.Deserialize<T>(data, _jsonOptions);
             }
             catch (Exception ex)
@@ -55,10 +65,12 @@ namespace linksy_backend_api.Infrastructure.Services
 
             try
             {
+                _logger.LogDebug("Cache SET. Key={Key}, Expiry={ExpirySeconds}s", key, (expiry ?? _defaultExpiry).TotalSeconds);
                 var options = new DistributedCacheEntryOptions
                 {
                     AbsoluteExpirationRelativeToNow = expiry ?? _defaultExpiry
                 };
+
                 var data = JsonSerializer.Serialize(value, _jsonOptions);
                 await _cache.SetStringAsync(key, data, options);
             }
@@ -68,11 +80,16 @@ namespace linksy_backend_api.Infrastructure.Services
             }
         }
 
+        //Xóa cache khi change data 
         public async Task RemoveAsync(string key)
         {
             if (!_enabled) return;
 
-            try { await _cache.RemoveAsync(key); }
+            try
+            {
+                _logger.LogDebug("Cache REMOVE. Key={Key}", key);
+                await _cache.RemoveAsync(key);
+            }
             catch (Exception ex) { _logger.LogWarning(ex, "Redis REMOVE failed for key: {Key}", key); }
         }
 
@@ -98,10 +115,10 @@ namespace linksy_backend_api.Infrastructure.Services
             catch { return false; }
         }
 
-        public async Task<T> GetOrSetAsync<T>(
-            string key,
-            Func<Task<T>> factory,
-            TimeSpan? expiry = null) where T : class
+        //Neu redis co data trả cache, 
+        //Khong co query DB trong factory -> Luu cache
+        //
+        public async Task<T> GetOrSetAsync<T>(string key, Func<Task<T>> factory, TimeSpan? expiry = null) where T : class
         {
             var cached = await GetAsync<T>(key);
             if (cached is not null) return cached;

@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Domain.Interfaces.Services;
+using linksy_backend_api.Core.DTOs.Requests.Notifications;
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -20,15 +21,18 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly ILogger<MessageService> _logger;
         private readonly IConnectionManager _connectionManager;
         private readonly IHubContext<ChatHub> _hubContext;
-        private readonly ICacheService _cache; 
+        private readonly ICacheService _cache;
         private readonly INotificationService _messageNotificationService;
-
+        // FIX #1 (Cache stampede): dùng SemaphoreSlim per-key để tránh nhiều request
+        // cùng miss cache và gọi DB đồng thời
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
+            _cacheLocks = new();
         public MessageService(
             IUnitOfWork unitOfWork,
             ILogger<MessageService> logger,
             IConnectionManager connectionManager,
             IHubContext<ChatHub> hubContext,
-            INotificationService messageNotificationService, 
+            INotificationService messageNotificationService,
             ICacheService cache)
         {
             _unitOfWork = unitOfWork;
@@ -45,9 +49,15 @@ namespace linksy_backend_api.Infrastructure.Services
 
         public async Task<IEnumerable<MessageResponse>> GetMessagesAsync(Guid userId, Guid chatroomId, int page = 1, int pageSize = 50)
         { // Chỉ cache page 1 (tin nhắn mới nhất) — các page cũ không cần realtime
+
+            var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(
+                rm => rm.ChatroomId == chatroomId && rm.UserId == userId && rm.LeftAt == null);
+
+            if (!isMember)
+                throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
             if (page == 1)
             {
-                var cacheKey = CacheKeys.Messages(chatroomId, page);
+                var cacheKey = CacheKeys.Messages(chatroomId, page, pageSize);
                 var cached = await _cache.GetAsync<List<MessageResponse>>(cacheKey);
                 if (cached is not null)
                 {
@@ -56,11 +66,6 @@ namespace linksy_backend_api.Infrastructure.Services
                     return cached;
                 }
             }
-            var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(
-                rm => rm.ChatroomId == chatroomId && rm.UserId == userId && rm.LeftAt == null);
-
-            if (!isMember)
-                throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
 
             // Dùng MessageRepository đã tách
             var messages = await _unitOfWork.MessageRepository.GetChatroomMessagesAsync(chatroomId, page, pageSize);
@@ -71,7 +76,10 @@ namespace linksy_backend_api.Infrastructure.Services
 
             result.Reverse(); // tin cũ ở trên, tin mới ở dưới
             if (page == 1)
-                await _cache.SetAsync(CacheKeys.Messages(chatroomId, 1), result, CacheKeys.ShortTtl);
+                await _cache.SetAsync(
+                    CacheKeys.Messages(chatroomId, 1, pageSize),
+                     result,
+                      page == 1 ? CacheKeys.ShortTtl : CacheKeys.LongTtl);
 
             return result;
         }
@@ -112,9 +120,10 @@ namespace linksy_backend_api.Infrastructure.Services
             }
 
             await _unitOfWork.BeginTransactionAsync();
+            Message message;
             try
             {
-                var message = new Message
+                message = new Message
                 {
                     MessageId = Guid.NewGuid(),
                     ChatroomId = messageDto.ChatroomId,
@@ -137,13 +146,7 @@ namespace linksy_backend_api.Infrastructure.Services
                     _unitOfWork.Chatrooms.Update(chatroom);
                 }
 
-                await CreateMessageNotificationsAsync(message, userId);
                 await _unitOfWork.CommitTransactionAsync();
-
-                var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
-                await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1));
-
-                return response;
             }
             catch (Exception ex)
             {
@@ -151,6 +154,31 @@ namespace linksy_backend_api.Infrastructure.Services
                 _logger.LogError(ex, "Error sending message");
                 throw;
             }
+            try
+            {
+                await CreateMessageNotificationsAsync(message, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Notification failed for MessageId={MessageId}, message was saved successfully",
+                    message.MessageId);
+            }
+            var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
+            await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1, 50));
+            try
+            {
+                await _hubContext.Clients
+                .Group(messageDto.ChatroomId.ToString())
+                .SendAsync("ReceiveMessage", response);
+            }
+            catch (System.Exception ex)
+            {
+
+                _logger.LogError(ex, "SignalR broadcast failed for MessageId={MessageId}", message.MessageId);
+            }
+
+            return response;
+
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -167,15 +195,43 @@ namespace linksy_backend_api.Infrastructure.Services
 
             if (message.IsDeleted == true)
                 throw new InvalidOperationException("Không thể sửa tin nhắn đã xóa.");
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
 
-            message.MessageText = newText;
-            message.IsEdited = true;
-            message.EditedAt = DateTime.UtcNow;
-            _unitOfWork.Messages.Update(message);
-            await _unitOfWork.SaveChangesAsync();
+                message.MessageText = newText;
+                message.IsEdited = true;
+                message.EditedAt = DateTime.UtcNow;
+                _unitOfWork.Messages.Update(message);
+                await _unitOfWork.SaveChangesAsync();
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch (System.Exception ex)
+            {
 
-            await _hubContext.Clients.Group(message.ChatroomId.ToString())
-                .SendAsync("MessageEdited", new { MessageId = messageId, NewText = newText, EditedAt = message.EditedAt });
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Error editing MessageId={MessageId}", messageId);
+            }
+
+            await _cache.RemoveAsync(CacheKeys.Messages(message.ChatroomId, 1, 50));
+            try
+            {
+                await _hubContext.Clients.Group(message.ChatroomId.ToString())
+                    .SendAsync("MessageEdited",
+                     new
+                     {
+                         MessageId = messageId,
+                         NewText = newText,
+                         EditedAt = message.EditedAt
+                     });
+
+            }
+            catch (System.Exception ex)
+            {
+
+                _logger.LogError(ex, "SignalR broadcast failed for MessageEdited MessageId={MessageId}", messageId);
+                throw;
+            }
 
             return await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
         }
@@ -191,14 +247,36 @@ namespace linksy_backend_api.Infrastructure.Services
 
             if (!canDelete)
                 throw new UnauthorizedAccessException("Bạn không có quyền xóa tin nhắn này.");
+            await _unitOfWork.BeginTransactionAsync();
 
-            message.IsDeleted = true;
-            message.DeletedAt = DateTime.UtcNow;
-            _unitOfWork.Messages.Update(message);
-            await _unitOfWork.SaveChangesAsync();
+            try
+            {
+                message.IsDeleted = true;
+                message.DeletedAt = DateTime.UtcNow;
 
-            await _hubContext.Clients.Group(message.ChatroomId.ToString())
+                _unitOfWork.Messages.Update(message);
+                await _unitOfWork.SaveChangesAsync();
+
+                await _unitOfWork.CommitTransactionAsync();
+
+            }
+            catch (System.Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Error deleting MessageId={MessageId}", messageId);
+            }
+
+            await _cache.RemoveAsync(CacheKeys.Messages(message.ChatroomId, 1, 50));
+            try
+            {
+
+                await _hubContext.Clients.Group(message.ChatroomId.ToString())
                 .SendAsync("MessageDeleted", new { MessageId = messageId, DeletedBy = userId });
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, "SignalR broadcast failed for MessageDeleted MessageId={MessageId}", messageId);
+            }
         }
 
         public async Task MarkMessageAsReadAsync(Guid userId, Guid chatroomId, Guid messageId)

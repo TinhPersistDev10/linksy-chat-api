@@ -13,12 +13,15 @@ namespace linksy_backend_api.Infrastructure.Cache
         public static string UserRoles(Guid userId)        => $"user:roles:{userId}";
 
         // ── Chatroom ─────────────────────────────────────────────────────────
-        public static string ChatroomList(Guid userId)     => $"chatroom:list:{userId}";
-        public static string ChatroomDetail(Guid id)       => $"chatroom:detail:{id}";
+        public static string ChatroomList(Guid userId, bool includeArchived, string type)     
+        => $"chatroom:list:{userId}:archived:{includeArchived}:type:{type}";
+        public static string ChatroomDetail(Guid userId, Guid chatroomId)       
+        => $"chatroom:detail:{chatroomId}:user:{userId}";
         public static string ChatroomMembers(Guid id)      => $"chatroom:members:{id}";
 
         // ── Messages ─────────────────────────────────────────────────────────
-        public static string Messages(Guid chatroomId, int page) => $"msg:{chatroomId}:p{page}";
+        public static string Messages(Guid chatroomId, int page, int pageSize) 
+        => $"msg:{chatroomId}:p{page}:s:{pageSize}";
         public static string MessageReactions(Guid messageId)    => $"msg:reactions:{messageId}";
 
         // ── Notifications ─────────────────────────────────────────────────────

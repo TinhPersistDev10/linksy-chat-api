@@ -18,8 +18,9 @@ namespace linksy_backend_api.Repositories
 
         public async Task<List<Chatroom>> GetUserChatroomsAsync(Guid userId, bool includeArchived = false, string? roomType = null)
         {
-            var query = _context.Chatrooms
-                .Include(c => c.ChatroomMembers).ThenInclude(rm => rm.User)
+            var query = Query()
+                .Include(c => c.ChatroomMembers.Where(rm => rm.LeftAt == null))
+                .ThenInclude(rm => rm.User)
                 .Include(c => c.LastMessage).ThenInclude(m => m!.Sender)
                 .Where(c => c.ChatroomMembers.Any(rm => rm.UserId == userId && rm.LeftAt == null));
 
@@ -52,11 +53,19 @@ namespace linksy_backend_api.Repositories
         public async Task<Chatroom?> GetChatroomDetailsAsync(Guid chatroomId)
         {
             return await Query()
-                .Include(c => c.ChatroomMembers)
+                .Include(c => c.ChatroomMembers.Where(rm => rm.LeftAt == null))
                     .ThenInclude(cm => cm.User)
                 .Include(c => c.LastMessage)
                     .ThenInclude(m => m!.Sender)
                 .FirstOrDefaultAsync(c => c.ChatroomId == chatroomId);
+        }
+
+        public async Task<Guid[]> GetActiveMemberIdsAsync(Guid chatroomId)
+        {
+            return await _context.ChatroomMembers
+           .Where(m => m.ChatroomId == chatroomId && m.LeftAt == null)
+           .Select(m => m.UserId)
+           .ToArrayAsync();
         }
     }
 }

@@ -70,6 +70,7 @@ namespace linksy_backend_api.Repositories
             NotificationSettingsRepository = new NotificationSettingsRepository(_context);
             PrivacySettingsRepository = new PrivacySettingsRepository(_context);
             UserStatusRepository = new UserStatusRepository(_context);
+            TokenRepository = new TokenRepository(_context);
         }
 
         #region Generic Repositories
@@ -114,6 +115,7 @@ namespace linksy_backend_api.Repositories
         public INotificationSettingsRepository NotificationSettingsRepository { get; private set; } = null!;
         public IPrivacySettingsRepository PrivacySettingsRepository { get; private set; } = null!;
         public IUserStatusRepository UserStatusRepository { get; private set; } = null!;
+        public ITokenRepository TokenRepository { get; private set; } = null!;
         #endregion
 
         #region Transaction Management

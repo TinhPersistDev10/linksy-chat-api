@@ -10,8 +10,12 @@ namespace linksy_backend_api.Repositories
 {
     public class UserRepository : Repository<User>, IUserRepository
     {
-        public UserRepository(LinksyDbContext context) : base(context) { }
+        private readonly LinksyDbContext _context;
 
+        public UserRepository(LinksyDbContext context) : base(context)
+        {
+            _context = context;
+        }
         public async Task<User?> GetByEmailAsync(string email)
         {
             return await FirstOrDefaultAsync(u => u.Email == email);
@@ -28,38 +32,54 @@ namespace linksy_backend_api.Repositories
             return await FirstOrDefaultAsync(u => u.Username == username);
         }
 
+        public async Task<List<Guid>> GetExistingUserIdsAsync(List<Guid> userIds)
+        {
+           return await _context.Users
+        .Where(u => userIds.Contains(u.UserId))
+        .Select(u => u.UserId)
+        .ToListAsync();
+        }
+
         public async Task<List<User>> GetOnlineUsersAsync(List<Guid> userIds)
         {
-            return await Query()
+            if (!userIds.Any()) return new List<User>();
+
+            return await QueryAsNoTracking()
                 .Where(u => userIds.Contains(u.UserId) && u.IsActive.GetValueOrDefault())
                 .ToListAsync();
         }
 
         public async Task<User?> GetWithRolesAsync(Guid userId)
         {
-            return await Query()
-                .Include(u => u.UserRoles)
-                    .ThenInclude(ur => ur.Role)
-                .FirstOrDefaultAsync(u => u.UserId == userId);
+            return await QueryAsNoTracking()
+            .Include(u => u.UserRoles)
+            .ThenInclude(ur => ur.Role)
+            .FirstOrDefaultAsync(u => u.UserId == userId);
         }
 
-        public async Task<bool> IsEmailExistsAsync(string email)
-        {
-            return await AnyAsync(u => u.Email == email);
-        }
+        public async Task<bool> IsEmailExistsAsync(string email, Guid? excludeUserId = null) =>
+            await AnyAsync(u => u.Email == email
+            && u.IsEmailVerified == true
+            && (excludeUserId == null || u.UserId != excludeUserId));
 
-        public async Task<bool> IsUsernameExistsAsync(string username)
-        {
-            return await AnyAsync(u => u.Username == username);
-        }
+
+        public async Task<bool> IsUsernameExistsAsync(string username, Guid? excludeUserId = null) =>
+            await AnyAsync(u => u.Username == username
+            && u.IsEmailVerified == true
+            && (excludeUserId == null || u.UserId != excludeUserId));
+
 
         public async Task<List<User>> SearchUsersAsync(string searchTerm, int limit = 20)
         {
-            return await Query()
-                .Where(u => u.IsActive ?? false && 
-                    (u.Username.Contains(searchTerm) || 
-                     u.Fullname.Contains(searchTerm) ||
-                     u.Email.Contains(searchTerm)))
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return new List<User>();
+
+            var term = searchTerm.Trim().ToLower();
+
+            return await QueryAsNoTracking()  // ✅ thêm AsNoTracking
+                .Where(u => (u.IsActive ?? false) &&
+                    (u.Username.ToLower().Contains(term) ||
+                     (u.Fullname != null && u.Fullname.ToLower().Contains(term))))
                 .Take(limit)
                 .ToListAsync();
         }

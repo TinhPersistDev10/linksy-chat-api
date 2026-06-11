@@ -35,45 +35,66 @@ namespace linksy_backend_api.Repositories
 
         public async Task<List<Notification>> GetUnreadNotificationsAsync(Guid userId)
         {
-            return await Query()
-            .Where(n => n.UserId == userId &&
-            (n.IsRead == null || n.IsRead == false) &&
-            (n.IsDeleted == null || n.IsDeleted == false))
+            return await ActiveQuery(userId)
+            .Where(n => n.IsRead != true)
             .OrderByDescending(n => n.CreatedAt)
             .ToListAsync();
         }
 
         public async Task<List<Notification>> GetUserNotificationsAsync(Guid userId, int page, int pageSize)
         {
-            return await Query()
-                    .Where(n => n.UserId == userId && (n.IsDeleted == null || n.IsDeleted == false))
-                    .OrderByDescending(n => n.CreatedAt)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+            return await ActiveQuery(userId)
+            .OrderByDescending(n => n.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
         }
 
         public async Task MarkAllAsReadAsync(Guid userId)
         {
-            var unreadNotifications = await Query()
-                 .Where(n => n.UserId == userId &&
-                            (n.IsRead == null || n.IsRead == false) &&
-                            (n.IsDeleted == null || n.IsDeleted == false))
-                 .ToListAsync();
-
-            if (unreadNotifications.Any())
-            {
-                foreach (var notification in unreadNotifications)
-                {
-                    notification.IsRead = true;
-                    notification.ReadAt = DateTime.UtcNow;
-                }
-
-                // UpdateRange không cần await vì nó chỉ track changes
-                UpdateRange(unreadNotifications);
-                // SaveChangesAsync sẽ được gọi từ Service layer hoặc UnitOfWork
-            }
+            await ActiveQuery(userId)
+            .Where(n => n.IsRead != true)
+            .ExecuteUpdateAsync(s => s
+            .SetProperty(n => n.IsRead, true)
+            .SetProperty(n => n.ReadAt, DateTime.UtcNow));
         }
 
+        public async Task SoftDeleteAllReadSync(Guid userId)
+        {
+            await ActiveQuery(userId)
+            .Where(n => n.IsRead == true)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsDeleted, true));
+        }
+
+        public async Task SoftDeleteAllSync(Guid userId)
+        {
+            await ActiveQuery(userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsDeleted, true));
+        }
+
+        public async Task SoftDeleteByIdsAsync(Guid userId, List<Guid> ids)
+        {
+            await ActiveQuery(userId)
+            .Where(n=>ids.Contains(n.NotificationId))
+            .ExecuteUpdateAsync(s => s.SetProperty(n=>n.IsDeleted, true));
+        }
+
+        public async Task SoftDeleteOlderThanAsync(Guid userId, int days)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-days);
+            await ActiveQuery(userId)
+            .Where(n => n.CreatedAt < cutoff)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsDeleted, true));
+        }
+        // ─────────────────────────────────────────────────────────────────────
+        // PRIVATE HELPERS
+        // ─────────────────────────────────────────────────────────────────────
+
+        // Base query dùng chung — tránh lặp điều kiện IsDeleted ở khắp nơi
+        private IQueryable<Notification> ActiveQuery(Guid userId) =>
+            Query().Where(n => n.UserId == userId && n.IsDeleted != true);
     }
+
 }

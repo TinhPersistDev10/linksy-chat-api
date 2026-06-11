@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using DotNetEnv;
 using linksy_backend_api.Core.Interfaces.Repositories;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Interfaces.Repositories;
@@ -19,6 +20,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+Env.Load();
 var builder = WebApplication.CreateBuilder(args);
 
 // Cấu hình logging - CHỈ MỘT LẦN DUY NHẤT ở đây
@@ -39,7 +41,7 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1",
         Description = "Linksy Chat Application API with JWT Authentication"
     });
-     c.OperationFilter<FileUploadOperationFilter    >();
+    c.OperationFilter<FileUploadOperationFilter>();
     // Định nghĩa cách xác thực
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -120,50 +122,50 @@ builder.Services.AddAuthentication(option =>
     // Xử lý events
     // SignalR JWT authentication
     options.Events = new JwtBearerEvents
-{
-    // ✅ FIX 1: Đọc JWT từ httpOnly cookie thay vì Authorization header
-    OnMessageReceived = context =>
     {
-        // Đọc accessToken từ cookie
-        var accessToken = context.Request.Cookies["accessToken"];
-        if (!string.IsNullOrEmpty(accessToken))
+        // ✅ FIX 1: Đọc JWT từ httpOnly cookie thay vì Authorization header
+        OnMessageReceived = context =>
         {
-            context.Token = accessToken;
-        }
+            // Đọc accessToken từ cookie
+            var accessToken = context.Request.Cookies["accessToken"];
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                context.Token = accessToken;
+            }
 
-        // Giữ lại logic SignalR cũ
-        var queryToken = context.Request.Query["access_token"];
-        var path = context.HttpContext.Request.Path;
-        if (!string.IsNullOrEmpty(queryToken) && path.StartsWithSegments("/hubs/chat"))
+            // Giữ lại logic SignalR cũ
+            var queryToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(queryToken) && path.StartsWithSegments("/hubs/chat"))
+            {
+                context.Token = queryToken;
+            }
+
+            return Task.CompletedTask;
+        },
+
+        OnAuthenticationFailed = context =>
         {
-            context.Token = queryToken;
-        }
+            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+            if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
+            {
+                context.Response.Headers["Token-Expired"] = "true";
+            }
+            return Task.CompletedTask;
+        },
 
-        return Task.CompletedTask;
-    },
-
-    OnAuthenticationFailed = context =>
-    {
-        Console.WriteLine($"Authentication failed: {context.Exception.Message}");
-        if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
+        OnTokenValidated = context =>
         {
-            context.Response.Headers["Token-Expired"] = "true";
+            Console.WriteLine("Token validated successfully.");
+            return Task.CompletedTask;
+        },
+
+        OnChallenge = context =>
+        {
+            Console.WriteLine($"OnChallenge: {context.Error}, {context.ErrorDescription}");
+            return Task.CompletedTask;
         }
-        return Task.CompletedTask;
-    },
-
-    OnTokenValidated = context =>
-    {
-        Console.WriteLine("Token validated successfully.");
-        return Task.CompletedTask;
-    },
-
-    OnChallenge = context =>
-    {
-        Console.WriteLine($"OnChallenge: {context.Error}, {context.ErrorDescription}");
-        return Task.CompletedTask;
-    }
-};
+    };
 });
 
 // Authorization
@@ -208,6 +210,7 @@ builder.Services.AddScoped<IUserSettingsRepository, UserSettingsRepository>();
 builder.Services.AddScoped<INotificationSettingsRepository, NotificationSettingsRepository>();
 builder.Services.AddScoped<IPrivacySettingsRepository, PrivacySettingsRepository>();
 builder.Services.AddScoped<IUserStatusRepository, UserStatusRepository>();
+builder.Services.AddScoped<ITokenRepository, TokenRepository>();
 // Generic Repository for models without specific repository
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
@@ -228,21 +231,21 @@ builder.Services.AddScoped<IGroupInvitationService, GroupInvitationService>();
 builder.Services.AddScoped<IChatroomAccessService, ChatroomAccessService>();
 builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 builder.Services.AddScoped<IReactionService, ReactionService>();
- builder.Services.AddScoped<IUserSettingsService,  UserSettingsService>();
+builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
 builder.Services.AddDirectoryBrowser();
 
 // Add Memory Cache
 builder.Services.AddMemoryCache();
 // ── Redis Cache ───────────────────────────────────────────────────────────────
 var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled", true);
-var redisConn    = builder.Configuration["Redis:ConnectionString"];
+var redisConn = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING");
 
 if (redisEnabled && !string.IsNullOrEmpty(redisConn))
 {
     builder.Services.AddStackExchangeRedisCache(options =>
     {
-        options.Configuration   = redisConn;
-        options.InstanceName    = builder.Configuration["Redis:InstanceName"] ?? "linksy:";
+        options.Configuration = redisConn;
+        options.InstanceName = Environment.GetEnvironmentVariable("REDIS_INSTANCE_NAME") ?? "linksy:";
     });
     Console.WriteLine("✅ Redis cache enabled");
 }

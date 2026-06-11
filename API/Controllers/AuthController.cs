@@ -230,7 +230,7 @@ namespace linksy_backend_api.Controllers
                 {
                     HttpOnly = true,
                     Secure = !isDevelopment,
-                    SameSite = SameSiteMode.Strict,
+                    SameSite = SameSiteMode.Lax,
                     Expires = result.ExpiresAt,
                     Path = "/",
                     IsEssential = true
@@ -240,7 +240,7 @@ namespace linksy_backend_api.Controllers
                 {
                     HttpOnly = true,
                     Secure = !isDevelopment,
-                    SameSite = SameSiteMode.Strict,
+                    SameSite = SameSiteMode.Lax,
                     Expires = result.RefreshTokenExpiresAt,
                     Path = "/",
                     IsEssential = true
