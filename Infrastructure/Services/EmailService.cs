@@ -39,7 +39,7 @@ namespace linksy_backend_api.Services
         {
             var message = purpose switch
             {
-                "email_verification" => "Cảm ơn bạn đã đăng ký ChatApp! Vui lòng sử dụng mã OTP dưới đây để xác thực email của bạn:",
+                "email_verification" => "Cảm ơn bạn đã đăng ký Linksy Chat! Vui lòng sử dụng mã OTP dưới đây để xác thực email của bạn:",
                 "password_reset" => "Bạn đã yêu cầu đặt lại mật khẩu. Vui lòng sử dụng mã OTP dưới đây:",
                 "login" => "Đây là mã OTP để đăng nhập vào tài khoản của bạn:",
                 _ => "Đây là mã OTP của bạn:"
@@ -105,7 +105,7 @@ namespace linksy_backend_api.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>ChatApp</h1>
+            <h1>Linksy Chat</h1>
         </div>
         <div class='content'>
             <h2>Xin chào {username}!</h2>
@@ -126,12 +126,12 @@ namespace linksy_backend_api.Services
                 </ul>
             </div>
 
-            <p>Nếu bạn cần hỗ trợ, vui lòng liên hệ với chúng tôi qua email: support@chatapp.com</p>
+            <p>Nếu bạn cần hỗ trợ, vui lòng liên hệ với chúng tôi qua email: support@linksy.com</p>
             
-            <p>Trân trọng,<br>Đội ngũ ChatApp</p>
+            <p>Trân trọng,<br>Đội ngũ Linksy Chat</p>
         </div>
         <div class='footer'>
-            <p>© 2024 ChatApp. All rights reserved.</p>
+            <p>© 2024 Linksy Chat. All rights reserved.</p>
             <p>Email này được gửi tự động, vui lòng không trả lời.</p>
         </div>
     </div>
@@ -294,7 +294,7 @@ namespace linksy_backend_api.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>Chào mừng đến với ChatApp!</h1>
+            <h1>Chào mừng đến với Linksy Chat!</h1>
         </div>
         <div class='content'>
             <h2>Xin chào {username}!</h2>
@@ -323,10 +323,10 @@ namespace linksy_backend_api.Services
             
             <p>Nếu có bất kỳ câu hỏi nào, đừng ngần ngại liên hệ với chúng tôi!</p>
             
-            <p>Chúc bạn có trải nghiệm tuyệt vời!<br>Đội ngũ ChatApp</p>
+            <p>Chúc bạn có trải nghiệm tuyệt vời!<br>Đội ngũ Linksy Chat</p>
         </div>
         <div style='text-align: center; margin-top: 20px; color: #666; font-size: 12px;'>
-            <p>© 2024 ChatApp. All rights reserved.</p>
+            <p>© 2024 Linksy Chat. All rights reserved.</p>
         </div>
     </div>
 </body>
