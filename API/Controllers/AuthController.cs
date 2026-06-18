@@ -114,6 +114,16 @@ namespace linksy_backend_api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during login");
+                if (ex.Data.Contains("Email"))
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new
+                    {
+                        success = false,
+                        message = ex.Message,
+                        email = ex.Data["Email"]?.ToString()
+                    });
+                }
+
                 return Unauthorized(new { success = false, message = ex.Message });
             }
         }

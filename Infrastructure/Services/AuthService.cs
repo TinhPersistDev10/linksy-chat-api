@@ -132,7 +132,11 @@ namespace linksy_backend_api.Services
 
             // Kiểm tra email verified
             if (user.IsEmailVerified != true)
-                throw new Exception("Vui lòng xác thực email trước khi đăng nhập");
+            {
+                var exception = new Exception("Vui lòng xác thực email trước khi đăng nhập");
+                exception.Data["Email"] = user.Email;
+                throw exception;
+            }
 
             // Kiểm tra active
             if (user.IsActive != true)
