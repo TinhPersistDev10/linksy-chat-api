@@ -83,7 +83,7 @@ namespace linksy_backend_api.Services
                 Fullname = user.Fullname ?? string.Empty,
                 Avatar = user.Avatar ?? string.Empty,
                 Bio = user.Bio ?? string.Empty,
-                DateOfBirth = user.DateOfBirth?.ToDateTime(TimeOnly.MinValue),
+                DateOfBirth = user.DateOfBirth,
                 IsEmailVerified = user.IsEmailVerified ?? false,
                 CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
                 LastLoginAt = user.LastLoginAt ?? DateTime.UtcNow
@@ -275,8 +275,7 @@ namespace linksy_backend_api.Services
                     existingUser.Username = request.Username;
                     existingUser.PasswordHash = HashPassword(request.Password);
                     existingUser.Fullname = request.Fullname;
-                    existingUser.DateOfBirth = request.DateOfBirth.HasValue
-                        ? DateOnly.FromDateTime(request.DateOfBirth.Value) : null;
+                    existingUser.DateOfBirth = request.DateOfBirth;
                     existingUser.UpdatedAt = DateTime.UtcNow;
 
                     var newOtp = GenerateOtp();
@@ -316,8 +315,7 @@ namespace linksy_backend_api.Services
                 Email = request.Email,
                 PasswordHash = HashPassword(request.Password),
                 Fullname = request.Fullname,
-                DateOfBirth = request.DateOfBirth.HasValue
-                                ? DateOnly.FromDateTime(request.DateOfBirth.Value) : null,
+                DateOfBirth = request.DateOfBirth,
                 // ⭐ Set avatar mặc định ngay khi tạo user
                 Avatar = DefaultAvatarHelper.GetDefaultUserAvatar(newUserId, username: request.Username, fullname: request.Fullname),
                 IsActive = true,

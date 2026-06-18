@@ -76,9 +76,7 @@ namespace linksy_backend_api.API.Controllers
                     Username = request.Username,
                     Fullname = request.Fullname,
                     Bio = request.Bio,
-                    DateOfBirth = request.DateOfBirth.HasValue
-                        ? DateOnly.FromDateTime(request.DateOfBirth.Value)
-                        : null
+                    DateOfBirth = request.DateOfBirth
                 };
 
                 var result = await _userService.UpdateUserAsync(CurrentUserId, dto);

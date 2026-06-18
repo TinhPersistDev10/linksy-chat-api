@@ -33,7 +33,6 @@ namespace linksy_backend_api.Repositories
             try
             {
                 return await _context.FriendRequests
-                    .AsNoTracking()
                     .FirstOrDefaultAsync(fr =>
                         fr.SenderId == senderId &&
                         fr.ReceiverId == receiverId );

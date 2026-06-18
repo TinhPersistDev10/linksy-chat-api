@@ -30,7 +30,15 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-
+public async Task<List<Guid>> GetActiveMemberIdsExceptAsync(Guid chatroomId, Guid excludeUserId)
+{
+    return await Query()
+        .Where(m => m.ChatroomId == chatroomId &&
+                    m.UserId != excludeUserId &&
+                    m.LeftAt == null)
+        .Select(m => m.UserId)
+        .ToListAsync();
+}
         public async Task<ChatroomMember?> GetNextMemberToPromoteAsync(Guid chatroomId, Guid excludeUserId)
         {
             return await Query()

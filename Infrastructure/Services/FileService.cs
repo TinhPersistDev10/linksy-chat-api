@@ -19,11 +19,18 @@ namespace linksy_backend_api.Infrastructure.Services
         public FileService(IConfiguration configuration, ILogger<FileService> logger)
         {
             _logger = logger;
-            var account = new Account(
-                configuration["Cloudinary:CloudName"],
-                configuration["Cloudinary:ApiKey"],
-                configuration["Cloudinary:ApiSecret"]
-            );
+            var cloudName = configuration["Cloudinary:CloudName"];
+            var apiKey = configuration["Cloudinary:ApiKey"];
+            var apiSecret = configuration["Cloudinary:ApiSecret"];
+
+            if (string.IsNullOrWhiteSpace(cloudName))
+                throw new InvalidOperationException("Cloudinary CloudName is not configured");
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new InvalidOperationException("Cloudinary ApiKey is not configured");
+            if (string.IsNullOrWhiteSpace(apiSecret))
+                throw new InvalidOperationException("Cloudinary ApiSecret is not configured");
+
+            var account = new Account(cloudName, apiKey, apiSecret);
             _cloudinary = new Cloudinary(account)
             {
                 Api = { Secure = true }

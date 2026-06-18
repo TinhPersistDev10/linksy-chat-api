@@ -65,20 +65,26 @@ namespace linksy_backend_api.Repositories
         {
             await ActiveQuery(userId)
             .Where(n => n.IsRead == true)
-            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsDeleted, true));
+            .ExecuteUpdateAsync(s => s
+            .SetProperty(n => n.IsDeleted, true)
+            .SetProperty(n => n.DeletedAt, DateTime.UtcNow));
         }
 
         public async Task SoftDeleteAllSync(Guid userId)
         {
             await ActiveQuery(userId)
-            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsDeleted, true));
+            .ExecuteUpdateAsync(s => s
+            .SetProperty(n => n.IsDeleted, true)
+            .SetProperty(n => n.DeletedAt, DateTime.UtcNow));
         }
 
         public async Task SoftDeleteByIdsAsync(Guid userId, List<Guid> ids)
         {
             await ActiveQuery(userId)
             .Where(n=>ids.Contains(n.NotificationId))
-            .ExecuteUpdateAsync(s => s.SetProperty(n=>n.IsDeleted, true));
+            .ExecuteUpdateAsync(s => s
+            .SetProperty(n => n.IsDeleted, true)
+            .SetProperty(n => n.DeletedAt, DateTime.UtcNow));
         }
 
         public async Task SoftDeleteOlderThanAsync(Guid userId, int days)
@@ -86,7 +92,9 @@ namespace linksy_backend_api.Repositories
             var cutoff = DateTime.UtcNow.AddDays(-days);
             await ActiveQuery(userId)
             .Where(n => n.CreatedAt < cutoff)
-            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsDeleted, true));
+            .ExecuteUpdateAsync(s => s
+            .SetProperty(n => n.IsDeleted, true)
+            .SetProperty(n => n.DeletedAt, DateTime.UtcNow));
         }
         // ─────────────────────────────────────────────────────────────────────
         // PRIVATE HELPERS

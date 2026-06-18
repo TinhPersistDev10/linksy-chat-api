@@ -27,6 +27,6 @@ namespace linksy_backend_api.DTOs
         [StringLength(100)]
         public string Fullname { get; set; }= string.Empty;
 
-        public DateTime? DateOfBirth { get; set; }
+        public DateOnly? DateOfBirth { get; set; }
     }
 }

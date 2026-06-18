@@ -13,6 +13,6 @@ namespace linksy_backend_api.Domain.DTOs.Requests.Users
         [StringLength(500)]
         public string? Bio { get; set; }
 
-        public DateTime? DateOfBirth { get; set; }
+        public DateOnly? DateOfBirth { get; set; }
     }
 }

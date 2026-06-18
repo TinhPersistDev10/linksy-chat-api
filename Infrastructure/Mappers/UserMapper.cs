@@ -21,7 +21,7 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 Fullname = user.Fullname ?? string.Empty,
                 Avatar = DefaultAvatarHelper.GetAvatarOrDefault(user.Avatar, user.UserId, username: user.Username, fullname: user.Fullname),
                 Bio = user.Bio ?? string.Empty,
-                DateOfBirth = user.DateOfBirth?.ToDateTime(TimeOnly.MinValue),
+                DateOfBirth = user.DateOfBirth,
                 IsEmailVerified = user.IsEmailVerified ?? false,
                 CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
                 LastLoginAt = user.LastLoginAt ?? DateTime.UtcNow

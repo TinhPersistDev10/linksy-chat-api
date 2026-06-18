@@ -55,17 +55,17 @@ namespace linksy_backend_api.Infrastructure.Services
 
             if (!isMember)
                 throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
-            if (page == 1)
-            {
-                var cacheKey = CacheKeys.Messages(chatroomId, page, pageSize);
-                var cached = await _cache.GetAsync<List<MessageResponse>>(cacheKey);
-                if (cached is not null)
-                {
-                    // Cập nhật IsOwn theo userId hiện tại (không lưu trong cache)
-                    cached.ForEach(m => m.IsOwn = m.SenderId == userId);
-                    return cached;
-                }
-            }
+            // if (page == 1)
+            // {
+            //     var cacheKey = CacheKeys.Messages(chatroomId, page, pageSize);
+            //     var cached = await _cache.GetAsync<List<MessageResponse>>(cacheKey);
+            //     if (cached is not null)
+            //     {
+            //         // Cập nhật IsOwn theo userId hiện tại (không lưu trong cache)
+            //         cached.ForEach(m => m.IsOwn = m.SenderId == userId);
+            //         return cached;
+            //     }
+            // }
 
             // Dùng MessageRepository đã tách
             var messages = await _unitOfWork.MessageRepository.GetChatroomMessagesAsync(chatroomId, page, pageSize);
@@ -75,11 +75,11 @@ namespace linksy_backend_api.Infrastructure.Services
                 result.Add(await MessageMapper.ToResponseAsync(message, _unitOfWork, userId));
 
             result.Reverse(); // tin cũ ở trên, tin mới ở dưới
-            if (page == 1)
-                await _cache.SetAsync(
-                    CacheKeys.Messages(chatroomId, 1, pageSize),
-                     result,
-                      page == 1 ? CacheKeys.ShortTtl : CacheKeys.LongTtl);
+            // if (page == 1)
+            //     await _cache.SetAsync(
+            //         CacheKeys.Messages(chatroomId, 1, pageSize),
+            //          result,
+            //           page == 1 ? CacheKeys.ShortTtl : CacheKeys.LongTtl);
 
             return result;
         }
@@ -137,6 +137,13 @@ namespace linksy_backend_api.Infrastructure.Services
                 };
                 await _unitOfWork.Messages.AddAsync(message);
 
+                var recipientIds = await _unitOfWork.ChatroomMemberRepository
+                    .GetActiveMemberIdsExceptAsync(messageDto.ChatroomId, userId);
+
+                await _unitOfWork.MessageDeliveryRepository.CreateDeliveriesForMembersAsync(
+                    message.MessageId,
+                    recipientIds);
+
                 var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(messageDto.ChatroomId);
                 if (chatroom != null)
                 {
@@ -164,7 +171,7 @@ namespace linksy_backend_api.Infrastructure.Services
                     message.MessageId);
             }
             var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
-            await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1, 50));
+            // await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1, 50));
             try
             {
                 await _hubContext.Clients
@@ -287,8 +294,14 @@ namespace linksy_backend_api.Infrastructure.Services
             var message = await _unitOfWork.Messages.GetByIdAsync(messageId)
                 ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
 
+            if (message.ChatroomId != chatroomId)
+                throw new InvalidOperationException("Tin nhắn không thuộc chatroom này.");
+
             member.LastReadAt = message.SentAt;
             _unitOfWork.ChatroomMembers.Update(member);
+
+            await _unitOfWork.MessageDeliveryRepository.MarkAsReadAsync(messageId, userId);
+
             await _unitOfWork.SaveChangesAsync();
         }
 
@@ -309,10 +322,8 @@ namespace linksy_backend_api.Infrastructure.Services
                     return;
                 }
 
-                var recipientIds = await _unitOfWork.ChatroomMembers.Query()
-                    .Where(rm => rm.ChatroomId == message.ChatroomId && rm.UserId != senderId && rm.LeftAt == null)
-                    .Select(rm => rm.UserId)
-                    .ToListAsync();
+                var recipientIds = await _unitOfWork.ChatroomMemberRepository
+                .GetActiveMemberIdsExceptAsync(message.ChatroomId, senderId);
 
                 await _messageNotificationService.NotifyNewMessageAsync(message, sender, chatroom, recipientIds);
             }

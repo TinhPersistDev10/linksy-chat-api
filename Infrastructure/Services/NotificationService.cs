@@ -198,6 +198,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 return new ApiResponseDto { Success = false, Message = "Không tìm thấy thông báo." };
 
             notification.IsDeleted = true;
+            notification.DeletedAt = DateTime.UtcNow;
             _unitOfWork.Notifications.Update(notification);
             await _unitOfWork.SaveChangesAsync();
             if (notification.IsRead != true) await _cache.RemoveAsync(CacheKeys.NotifUnreadCount(userId));
@@ -230,37 +231,40 @@ namespace linksy_backend_api.Infrastructure.Services
         public async Task NotifyNewMessageAsync(Message message, User sender, Chatroom chatroom, List<Guid> recipientIds)
         {
             try
-            {
-                var roomName = chatroom.RoomType == "direct"
-                    ? sender.Fullname ?? sender.Username ?? "Chat"
-                    : chatroom.RoomName ?? "Chat";
+    {
+        var roomName = chatroom.RoomType == "direct"
+            ? sender.Fullname ?? sender.Username ?? "Chat"
+            : chatroom.RoomName ?? "Chat";
 
-                var requests = recipientIds.Select(recipientId => new CreateNotificationRequest
+        foreach (var recipientId in recipientIds)
+        {
+            var connections = await _connectionManager.GetConnectionsAsync(recipientId);
+            if (!connections.Any()) continue;
+
+            await _hubContext.Clients.Clients(connections)
+                .SendAsync("ReceiveMessageNotification", new
                 {
-                    UserId = recipientId,
                     NotificationType = "new_message",
+                    ChatroomId = chatroom.ChatroomId,
+                    SenderId = sender.UserId,
+                    SenderName = sender.Fullname ?? sender.Username,
                     Title = roomName,
-                    // Body = message.MessageText ?? string.Empty,
                     Body = message.MessageType switch
                     {
-                        "image" => "📷 Đã gửi một ảnh",
-                        "file" => "📎 Đã gửi một file",
-                        "voice" => "🎤 Đã gửi tin nhắn thoại",
+                        "image" => "Đã gửi một ảnh",
+                        "file" => "Đã gửi một file",
+                        "voice" => "Đã gửi tin nhắn thoại",
                         _ => message.MessageText ?? string.Empty
                     },
-                    RelatedEntityId = message.ChatroomId,
-                    RelatedEntityType = "chatroom",
-                    ActionUrl = $"/messages/{chatroom.ChatroomId}",
-                    ImageUrl = chatroom.RoomType == "direct" ? sender.Avatar : chatroom.Avatar
-                }).ToList();
-
-                await CreateBulkNotificationsAsync(requests);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error notifying new message");
-                throw;
-            }
+                    SentAt = message.SentAt
+                });
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error sending realtime message notification");
+        throw;
+    }
         }
 
         public async Task NotifyNewFriendRequestAsync(Guid senderId, Guid receiverId, Guid requestId)
