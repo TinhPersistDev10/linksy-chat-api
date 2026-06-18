@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.Mail;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -12,11 +13,13 @@ namespace linksy_backend_api.Services
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger<EmailService> _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
+        public EmailService(IConfiguration configuration, ILogger<EmailService> logger, IHttpClientFactory httpClientFactory)
         {
             _configuration = configuration;
             _logger = logger;
+            _httpClientFactory = httpClientFactory;
         }
 
         async Task IEmailService.SendOtpEmailAsync(string toEmail, string username, string otp, string purpose)
@@ -139,7 +142,17 @@ namespace linksy_backend_api.Services
         {
             try
             {
+                var brevoApiKey = _configuration["Brevo:ApiKey"];
+                if (!string.IsNullOrWhiteSpace(brevoApiKey))
+                {
+                    await SendEmailWithBrevoAsync(toEmail, subject, body.ToString() ?? string.Empty, brevoApiKey);
+                    return;
+                }
 
+                // Gmail SMTP is intentionally disabled. Use Brevo__ApiKey/Brevo__FromEmail/Brevo__FromName instead.
+                throw new InvalidOperationException("Brevo email provider is not configured");
+
+                /*
                 var SmtpHost = _configuration["Email:SmtpHost"];
                 var SmtpPort = int.TryParse(_configuration["Email:SmtpPort"], out var port) ? port : 587;
                 var SmtpUsername = _configuration["Email:SmtpUsername"];
@@ -153,6 +166,8 @@ namespace linksy_backend_api.Services
                     Credentials = new NetworkCredential(SmtpUsername, SmtpPassword),
                     EnableSsl = true
                 };
+                if (string.IsNullOrEmpty(FromEmail))
+                    throw new InvalidOperationException("FromEmail is not configured");
                 var mailMessage = new MailMessage();
                 if (!string.IsNullOrEmpty(FromEmail))
                 {
@@ -169,12 +184,54 @@ namespace linksy_backend_api.Services
                 }
                 await client.SendMailAsync(mailMessage);
                 _logger.LogInformation($"Email sent successfully to {toEmail}");
+                */
             }
             catch (System.Exception ex)
             {
                 _logger.LogError(ex, $"Failed to send email to {toEmail}");
                 throw new Exception("Không thể gửi email. Vui lòng thử lại sau.");
             }
+        }
+
+        private async Task SendEmailWithBrevoAsync(string toEmail, string subject, string htmlBody, string apiKey)
+        {
+            var fromEmail = _configuration["Brevo:FromEmail"] ?? _configuration["Email:FromEmail"];
+            var fromName = _configuration["Brevo:FromName"] ?? _configuration["Email:FromName"] ?? "Linksy Chat";
+
+            if (string.IsNullOrWhiteSpace(fromEmail))
+                throw new InvalidOperationException("Brevo FromEmail is not configured");
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email");
+            request.Headers.Add("api-key", apiKey);
+            request.Content = JsonContent.Create(new
+            {
+                sender = new
+                {
+                    name = fromName,
+                    email = fromEmail
+                },
+                to = new[]
+                {
+                    new
+                    {
+                        email = toEmail
+                    }
+                },
+                subject,
+                htmlContent = htmlBody
+            });
+
+            var client = _httpClientFactory.CreateClient();
+            using var response = await client.SendAsync(request);
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Brevo failed. StatusCode={StatusCode}, Body={Body}", response.StatusCode, responseBody);
+                throw new Exception("Không thể gửi email. Vui lòng thử lại sau.");
+            }
+
+            _logger.LogInformation("Email sent successfully to {ToEmail} via Brevo", toEmail);
         }
 
         async Task IEmailService.SendWelcomeEmailAsync(string toEmail, string username)

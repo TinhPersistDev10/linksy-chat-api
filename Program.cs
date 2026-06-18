@@ -238,6 +238,7 @@ builder.Services.AddScoped<IChatroomAccessService, ChatroomAccessService>();
 builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 builder.Services.AddScoped<IReactionService, ReactionService>();
 builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
+builder.Services.AddHttpClient();
 builder.Services.AddDirectoryBrowser();
 
 // Add Memory Cache
