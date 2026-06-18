@@ -72,12 +72,16 @@ builder.Services.AddSwaggerGen(c =>
 
 // Database context
 builder.Services.AddDbContext<LinksyDbContext>(options =>
+{
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
-        o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
-           .EnableSensitiveDataLogging()
-           .EnableDetailedErrors())
-           ;
+        o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery));
 
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+    }
+});
 // JWT authentication
 var jwtkey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
@@ -175,10 +179,11 @@ builder.Services.AddAuthorization();
 //CORS
 builder.Services.AddCors(options =>
 {
-
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("Frontend", policy =>
     {
-        policy.SetIsOriginAllowed(origin => true)
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "https://linksy-frontend-ashen.vercel.app")
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
@@ -291,15 +296,11 @@ app.UseSwaggerUI(c =>
 });
 app.UseResponseCompression();
 app.UseRouting();
-app.UseCors("AllowAll");
+app.UseCors("Frontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () =>
-{
-    return Results.Ok("OK");
-});
 app.MapHealthChecks("/health");
 app.MapControllers();
 

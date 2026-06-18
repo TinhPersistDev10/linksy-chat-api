@@ -127,8 +127,8 @@ namespace linksy_backend_api.Controllers
             return new CookieOptions
             {
                 HttpOnly = true,
-                Secure = !isDevelopment,
-                SameSite = SameSiteMode.Lax,
+                Secure = true,
+                SameSite = SameSiteMode.None,
                 Path = "/",
                 IsEssential = true,
                 Expires = expires
@@ -149,8 +149,8 @@ namespace linksy_backend_api.Controllers
             var expiredOptions = new CookieOptions
             {
                 HttpOnly = true,                    // ← BẮT BUỘC phải có
-                Secure = !isDevelopment,
-                SameSite = SameSiteMode.Lax,
+                Secure = true,
+                SameSite = SameSiteMode.None,
                 Path = "/",
                 Expires = DateTimeOffset.UnixEpoch  // Set về 1970 → browser xóa ngay
             };
@@ -229,8 +229,8 @@ namespace linksy_backend_api.Controllers
                 var accessTokenOptions = new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = !isDevelopment,
-                    SameSite = SameSiteMode.Lax,
+                    Secure = true,
+                    SameSite = SameSiteMode.None,
                     Expires = result.ExpiresAt,
                     Path = "/",
                     IsEssential = true
@@ -239,8 +239,8 @@ namespace linksy_backend_api.Controllers
                 var refreshTokenOptions = new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = !isDevelopment,
-                    SameSite = SameSiteMode.Lax,
+                    Secure = true,
+                    SameSite = SameSiteMode.None,
                     Expires = result.RefreshTokenExpiresAt,
                     Path = "/",
                     IsEssential = true
