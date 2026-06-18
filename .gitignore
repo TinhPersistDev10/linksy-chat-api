@@ -40,3 +40,5 @@ appsettings.Production.json
 appsettings.json
 # appsettings.*.json
 .env
+linksy_bruno_colleciton/
+.codex/

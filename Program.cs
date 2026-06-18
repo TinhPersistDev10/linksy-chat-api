@@ -30,6 +30,7 @@ builder.Logging.AddDebug();
 builder.Logging.SetMinimumLevel(LogLevel.Debug);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddHealthChecks();
 
 // Đăng ký dịch vụ generate Swagger documentation
 builder.Services.AddSwaggerGen(c =>
@@ -295,6 +296,11 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapGet("/health", () =>
+{
+    return Results.Ok("OK");
+});
+app.MapHealthChecks("/health");
 app.MapControllers();
 
 // Map SignalR Hub
