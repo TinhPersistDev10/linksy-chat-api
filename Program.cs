@@ -19,23 +19,34 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 Env.Load();
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Cấu hình logging - CHỈ MỘT LẦN DUY NHẤT ở đây
+// ── Logging ───────────────────────────────────────────────────────────────────
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
-builder.Logging.SetMinimumLevel(LogLevel.Debug);
+builder.Logging.SetMinimumLevel(
+    builder.Environment.IsDevelopment() ? LogLevel.Debug : LogLevel.Information);
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.SingleLine = true;
+    options.IncludeScopes = true;
+    options.UseUtcTimestamp = true;
+    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff 'UTC' ";
+});
+
+// ── Core services ─────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHealthChecks();
 
-// Đăng ký dịch vụ generate Swagger documentation
+// ── Swagger ───────────────────────────────────────────────────────────────────
 builder.Services.AddSwaggerGen(c =>
 {
-    // Tạo một API document version "v1"
     c.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "Linksy API",
@@ -43,7 +54,6 @@ builder.Services.AddSwaggerGen(c =>
         Description = "Linksy Chat Application API with JWT Authentication"
     });
     c.OperationFilter<FileUploadOperationFilter>();
-    // Định nghĩa cách xác thực
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         In = ParameterLocation.Header,
@@ -53,7 +63,6 @@ builder.Services.AddSwaggerGen(c =>
         Scheme = "Bearer",
         BearerFormat = "JWT"
     });
-    // Áp dụng xác thực cho toàn bộ API
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
@@ -65,15 +74,16 @@ builder.Services.AddSwaggerGen(c =>
                     Id = "Bearer"
                 }
             },
-            new string[] { }
+            Array.Empty<string>()
         }
     });
 });
 
-// Database context
+// ── Database ──────────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<LinksyDbContext>(options =>
 {
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
         o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery));
 
     if (builder.Environment.IsDevelopment())
@@ -82,65 +92,63 @@ builder.Services.AddDbContext<LinksyDbContext>(options =>
         options.EnableDetailedErrors();
     }
 });
-// JWT authentication
-var jwtkey = builder.Configuration["Jwt:Key"];
+
+// ── JWT ───────────────────────────────────────────────────────────────────────
+var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
 
-Console.WriteLine($"JWT Config - Key Length: {jwtkey?.Length}, Issuer: {jwtIssuer}, Audience: {jwtAudience}");
+Console.WriteLine($"JWT Config — Key Length: {jwtKey?.Length}, Issuer: {jwtIssuer}, Audience: {jwtAudience}");
 
-if (string.IsNullOrEmpty(jwtkey))
-    throw new ArgumentNullException(nameof(jwtkey), "JWT Key is not configured");
+if (string.IsNullOrEmpty(jwtKey))
+    throw new ArgumentNullException(nameof(jwtKey), "JWT Key is not configured");
 if (string.IsNullOrEmpty(jwtIssuer))
     throw new ArgumentNullException(nameof(jwtIssuer), "JWT Issuer is not configured");
 if (string.IsNullOrEmpty(jwtAudience))
     throw new ArgumentNullException(nameof(jwtAudience), "JWT Audience is not configured");
 
-// Tạo key an toàn
-var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtkey));
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
-// Đăng ký dịch vụ xác thực
-builder.Services.AddAuthentication(option =>
+builder.Services.AddAuthentication(options =>
 {
-    option.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    option.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    option.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
 }).AddJwtBearer(options =>
 {
     options.SaveToken = true;
-    options.RequireHttpsMetadata = false;
-    // Cấu hình validation parameters
+    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateIssuer = true, // Kiểm tra người phát hành token
-        ValidateAudience = true, //Kiểm tra đối tượng nhận token
-        ValidateLifetime = true, //Kiểm tra thời hạn token
-        ValidateIssuerSigningKey = true, //Kiểm tra chữ ký token
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
         ValidIssuer = jwtIssuer,
         ValidAudience = jwtAudience,
-        IssuerSigningKey = key,
+        IssuerSigningKey = signingKey,
         ClockSkew = TimeSpan.Zero,
         NameClaimType = ClaimTypes.Name,
         RoleClaimType = ClaimTypes.Role
     };
 
-    // Xử lý events
-    // SignalR JWT authentication
     options.Events = new JwtBearerEvents
     {
-        // Đọc JWT từ httpOnly cookie thay vì Authorization header
         OnMessageReceived = context =>
         {
-            // Đọc accessToken từ cookie
-            var accessToken = context.Request.Cookies["accessToken"];
-            if (!string.IsNullOrEmpty(accessToken))
+            // Ưu tiên 1: httpOnly cookie
+            var cookieToken = context.Request.Cookies["accessToken"];
+            if (!string.IsNullOrEmpty(cookieToken))
             {
-                context.Token = accessToken;
+                context.Token = cookieToken;
+                return Task.CompletedTask;
             }
 
+            // Ưu tiên 2: query string (dành cho SignalR)
             var queryToken = context.Request.Query["access_token"];
-            var path = context.HttpContext.Request.Path;
-            if (!string.IsNullOrEmpty(queryToken) && path.StartsWithSegments("/hubs/chat"))
+            if (!string.IsNullOrEmpty(queryToken) &&
+                context.HttpContext.Request.Path.StartsWithSegments("/hubs/chat"))
             {
                 context.Token = queryToken;
             }
@@ -150,29 +158,26 @@ builder.Services.AddAuthentication(option =>
 
         OnAuthenticationFailed = context =>
         {
-            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
-            if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
-            {
+            Console.WriteLine($"[JWT] Authentication failed: {context.Exception.Message}");
+            if (context.Exception is SecurityTokenExpiredException)
                 context.Response.Headers["Token-Expired"] = "true";
-            }
             return Task.CompletedTask;
         },
 
         OnTokenValidated = context =>
         {
-            Console.WriteLine("Token validated successfully.");
+            Console.WriteLine("[JWT] Token validated successfully.");
             return Task.CompletedTask;
         },
 
         OnChallenge = context =>
         {
-            Console.WriteLine($"OnChallenge: {context.Error}, {context.ErrorDescription}");
+            Console.WriteLine($"[JWT] OnChallenge: {context.Error} — {context.ErrorDescription}");
             return Task.CompletedTask;
         }
     };
 });
 
-// Authorization
 builder.Services.AddAuthorization();
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
@@ -185,15 +190,111 @@ var staticOrigins = new[]
     "http://localhost:3001",
     "https://linksy-frontend-ashen.vercel.app"
 };
-// SignalR
+
+// Origins bổ sung từ config / env (dùng cho staging hoặc custom domain)
+var extraOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
+var allStaticOrigins = staticOrigins.Concat(extraOrigins).ToArray();
+
+// Vercel config
+// VercelProjectName : tiền tố tên project,  vd: "linksy-frontend"
+// VercelTeamSlug   : phần team trong preview URL, vd: "tinhsnguyeenx281-3273s-projects"
+//                    để trống ("") = bỏ qua kiểm tra team (cho phép mọi team có cùng project name)
+var vercelProjectName = builder.Configuration.GetValue<string>("Cors:VercelProjectName")
+                        ?? "linksy-frontend";
+var vercelTeamSlug = builder.Configuration.GetValue<string>("Cors:VercelTeamSlug")
+                     ?? "";   // vd: "tinhsnguyeenx281-3273s-projects"
+
+// Vercel preview URL patterns:
+//   1. Team-scoped  : <project>-<git-hash>-<team-slug>.vercel.app
+//   2. Personal     : <project>-<git-hash>-<username>.vercel.app
+//   3. Alias tĩnh   : <project>-git-<branch>-<team-slug>.vercel.app
+//
+// Chiến lược: host phải bắt đầu bằng <projectName>- VÀ kết thúc bằng .vercel.app
+// Nếu vercelTeamSlug được chỉ định → kiểm tra thêm phần team.
+static bool IsVercelPreviewUrl(string origin, string projectName, string teamSlug)
+{
+    try
+    {
+        var uri = new Uri(origin);
+        if (uri.Scheme != "https") return false;
+
+        var host = uri.Host;
+        if (!host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return false;
+
+        // Host phải bắt đầu bằng "<projectName>-"
+        var prefix = projectName + "-";
+        if (!host.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+
+        // Nếu có team slug → host phải kết thúc bằng "-<teamSlug>.vercel.app"
+        if (!string.IsNullOrEmpty(teamSlug))
+        {
+            var teamSuffix = "-" + teamSlug + ".vercel.app";
+            return host.EndsWith(teamSuffix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+Console.WriteLine($"[CORS] AllowAnyOrigin={allowAnyOrigin}, StaticOrigins={allStaticOrigins.Length}");
+Console.WriteLine($"[CORS] VercelProject={vercelProjectName}, VercelTeam={vercelTeamSlug}");
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        if (allowAnyOrigin)
+        {
+            // Dev only — cho phép mọi origin
+            policy.SetIsOriginAllowed(_ => true)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+
+            Console.WriteLine("[CORS] Mode: AllowAnyOrigin (development)");
+        }
+        else
+        {
+            // Production — chỉ cho phép origins đã biết + Vercel preview URLs
+            policy.SetIsOriginAllowed(origin =>
+                  {
+                      if (allStaticOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                          return true;
+
+                      if (IsVercelPreviewUrl(origin, vercelProjectName, vercelTeamSlug))
+                      {
+                          Console.WriteLine($"[CORS] Allowed Vercel preview: {origin}");
+                          return true;
+                      }
+
+                      Console.WriteLine($"[CORS] Blocked origin: {origin}");
+                      return false;
+                  })
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+
+            Console.WriteLine($"[CORS] Mode: Restricted — allowed static origins: {string.Join(", ", allStaticOrigins)}");
+        }
+    });
+});
+
+// ── SignalR ───────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR(options =>
 {
-    options.EnableDetailedErrors = true;
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
     options.KeepAliveInterval = TimeSpan.FromSeconds(15);
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
 });
 
-// Repository Pattern - Register Repositories
+// ── Repository Pattern ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<UnitOfWork>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -215,7 +316,7 @@ builder.Services.AddScoped<IUserStatusRepository, UserStatusRepository>();
 builder.Services.AddScoped<ITokenRepository, TokenRepository>();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
-// Register Services
+// ── Services ──────────────────────────────────────────────────────────────────
 builder.Services.AddSingleton<IConnectionManager, ConnectionManager>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
@@ -236,9 +337,9 @@ builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
 builder.Services.AddHttpClient();
 builder.Services.AddDirectoryBrowser();
 
-// Add Memory Cache
+// ── Cache ─────────────────────────────────────────────────────────────────────
 builder.Services.AddMemoryCache();
-// ── Redis Cache ───────────────────────────────────────────────────────────────
+
 var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled", true);
 var redisConn = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING");
 
@@ -253,48 +354,59 @@ if (redisEnabled && !string.IsNullOrEmpty(redisConn))
 }
 else
 {
-    // Fallback về in-memory khi Redis không có sẵn (dev/test)
     builder.Services.AddDistributedMemoryCache();
     Console.WriteLine("⚠️  Redis disabled — using in-memory cache");
 }
 
 builder.Services.AddScoped<ICacheService, CacheService>();
-// Response compression (optional, good for SignalR)
+
+// ── Response compression ──────────────────────────────────────────────────────
 builder.Services.AddResponseCompression(opts =>
 {
     opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
         new[] { "application/octet-stream" });
 });
+
+// ── Route options ─────────────────────────────────────────────────────────────
 builder.Services.Configure<RouteOptions>(options =>
 {
     options.LowercaseUrls = true;
 });
-builder.Logging.AddSimpleConsole(options =>
-{
-    options.SingleLine = true;
-    options.IncludeScopes = true;
-    options.UseUtcTimestamp = true;
-    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff 'UTC' ";
-});
 
+// ═════════════════════════════════════════════════════════════════════════════
 var app = builder.Build();
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── CORS debug middleware (chỉ chạy khi không phải Production) ────────────────
+if (!app.Environment.IsProduction())
+{
+    app.Use(async (context, next) =>
+    {
+        var origin = context.Request.Headers["Origin"].ToString();
+        if (!string.IsNullOrEmpty(origin))
+            Console.WriteLine($"[CORS-DEBUG] Incoming request from origin: {origin} → {context.Request.Method} {context.Request.Path}");
+        await next();
+    });
+}
+
+// ── Swagger ───────────────────────────────────────────────────────────────────
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Linksy API V1");
     c.RoutePrefix = string.Empty;
 });
+
+// ── Middleware pipeline (thứ tự quan trọng) ───────────────────────────────────
 app.UseResponseCompression();
 app.UseRouting();
-app.UseCors("Frontend");
-
+app.UseCors("Frontend");          // ← phải sau UseRouting, trước UseAuthentication
 app.UseAuthentication();
 app.UseAuthorization();
 
+// ── Endpoints ─────────────────────────────────────────────────────────────────
 app.MapHealthChecks("/health");
 app.MapControllers();
-
-// Map SignalR Hub
 app.MapHub<ChatHub>("/hubs/chat");
 
 app.Run();
