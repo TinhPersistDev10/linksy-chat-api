@@ -1,11 +1,9 @@
 ﻿using linksy_backend_api.Domain.DTOs.Responses.Delivery;
 using linksy_backend_api.DTOs;
-using linksy_backend_api.Hubs;
+using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Repositories.IRepositories;
-using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 
 namespace linksy_backend_api.API.Controllers
 {
@@ -18,19 +16,16 @@ namespace linksy_backend_api.API.Controllers
     public class MessageDeliveryController : BaseApiController
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IHubContext<ChatHub> _hubContext;
-        private readonly IConnectionManager _connectionManager;
         private readonly ILogger<MessageDeliveryController> _logger;
+        private readonly IMessageService _messageService;
 
         public MessageDeliveryController(
             IUnitOfWork unitOfWork,
-            IHubContext<ChatHub> hubContext,
-            IConnectionManager connectionManager,
+            IMessageService messageService,
             ILogger<MessageDeliveryController> logger)
         {
             _unitOfWork = unitOfWork;
-            _hubContext = hubContext;
-            _connectionManager = connectionManager;
+            _messageService = messageService;
             _logger = logger;
         }
 
@@ -101,29 +96,37 @@ namespace linksy_backend_api.API.Controllers
         {
             try
             {
-                await _unitOfWork.MessageDeliveryRepository.MarkAsDeliveredAsync(messageId, CurrentUserId);
-                await _unitOfWork.SaveChangesAsync();
-
-                // Notify sender
-                var message = await _unitOfWork.Messages.GetByIdAsync(messageId);
-                if (message?.SenderId.HasValue == true)
-                {
-                    var senderConns = await _connectionManager.GetConnectionsAsync(message.SenderId!.Value);
-                    if (senderConns.Any())
-                        await _hubContext.Clients.Clients(senderConns).SendAsync("MessageDelivered", new
-                        {
-                            MessageId = messageId,
-                            DeliveredBy = CurrentUserId,
-                            DeliveredAt = DateTime.UtcNow
-                        });
-                }
+                await _messageService.MarkMessageAsDeliveredAsync(CurrentUserId, messageId);
 
                 return Ok(new ApiResponseDto { Success = true, Message = "Đã đánh dấu đã nhận." });
             }
+            catch (KeyNotFoundException ex)
+            {
+                _logger.LogWarning(ex,
+                    "Message not found while marking delivered. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    CurrentUserId);
+                return NotFound(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex,
+                    "Unauthorized delivered request. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    CurrentUserId);
+                return Forbid();
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error marking message {MessageId} as delivered", messageId);
-                return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
+                _logger.LogError(ex,
+                    "Error marking message delivered. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    CurrentUserId);
+                return StatusCode(500, new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Không thể đánh dấu tin nhắn đã nhận."
+                });
             }
         }
 
@@ -138,30 +141,29 @@ namespace linksy_backend_api.API.Controllers
         {
             try
             {
-                var member = await _unitOfWork.ChatroomMemberRepository
-                    .GetActiveMemberAsync(chatroomId, CurrentUserId);
-
-                if (member is null)
-                    return Forbid();
-
-                member.LastReadAt = DateTime.UtcNow;
-                _unitOfWork.ChatroomMembers.Update(member);
-                await _unitOfWork.SaveChangesAsync();
-
-                // Notify chatroom
-                await _hubContext.Clients.Group(chatroomId.ToString()).SendAsync("AllMessagesRead", new
-                {
-                    ChatroomId = chatroomId,
-                    UserId = CurrentUserId,
-                    ReadAt = DateTime.UtcNow
-                });
+                await _messageService.MarkAllMessagesAsReadAsync(CurrentUserId, chatroomId);
 
                 return Ok(new ApiResponseDto { Success = true, Message = "Đã đánh dấu tất cả tin nhắn là đã đọc." });
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex,
+                    "Unauthorized read-all request. ChatroomId={ChatroomId}, UserId={UserId}",
+                    chatroomId,
+                    CurrentUserId);
+                return Forbid();
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error marking all messages as read in chatroom {ChatroomId}", chatroomId);
-                return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
+                _logger.LogError(ex,
+                    "Error marking all messages as read. ChatroomId={ChatroomId}, UserId={UserId}",
+                    chatroomId,
+                    CurrentUserId);
+                return StatusCode(500, new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Không thể đánh dấu tin nhắn đã đọc."
+                });
             }
         }
     }

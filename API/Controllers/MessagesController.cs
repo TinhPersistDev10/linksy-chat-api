@@ -17,7 +17,7 @@ namespace linksy_backend_api.Controllers
     public class MessageController : ControllerBase
     {
         private readonly IMessageService _messageService;
-        private readonly IUnitOfWork     _unitOfWork;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<MessageController> _logger;
 
         public MessageController(
@@ -26,8 +26,8 @@ namespace linksy_backend_api.Controllers
             ILogger<MessageController> logger)
         {
             _messageService = messageService;
-            _unitOfWork     = unitOfWork;
-            _logger         = logger;
+            _unitOfWork = unitOfWork;
+            _logger = logger;
         }
 
         private Guid CurrentUserId =>
@@ -44,27 +44,26 @@ namespace linksy_backend_api.Controllers
         [ProducesResponseType(403)]
         public async Task<IActionResult> GetMessages(
             Guid chatroomId,
-            [FromQuery] int page     = 1,
+            [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50)
         {
             try
             {
-                if (page < 1)     page     = 1;
+                if (page < 1) page = 1;
                 if (pageSize < 1) pageSize = 50;
                 if (pageSize > 100) pageSize = 100; // hard cap
 
                 var messages = await _messageService.GetMessagesAsync(CurrentUserId, chatroomId, page, pageSize);
-
                 return Ok(new ApiResponseDto
                 {
                     Success = true,
                     Message = "Messages retrieved",
-                    Data    = new
+                    Data = new
                     {
-                        Messages    = messages,
-                        Page        = page,
-                        PageSize    = pageSize,
-                        HasMore     = messages.Count() == pageSize
+                        Messages = messages,
+                        Page = page,
+                        PageSize = pageSize,
+                        HasMore = messages.Count() == pageSize
                     }
                 });
             }
@@ -102,14 +101,14 @@ namespace linksy_backend_api.Controllers
                         Message = "keyword is required"
                     });
 
-                if (limit < 1)   limit = 1;
+                if (limit < 1) limit = 1;
                 if (limit > 100) limit = 100;
 
                 // Verify the caller is a member of this chatroom
                 var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(
                     cm => cm.ChatroomId == chatroomId &&
-                          cm.UserId     == CurrentUserId &&
-                          cm.LeftAt     == null);
+                          cm.UserId == CurrentUserId &&
+                          cm.LeftAt == null);
 
                 if (!isMember)
                     return Forbid();
@@ -117,7 +116,7 @@ namespace linksy_backend_api.Controllers
                 var messages = await _unitOfWork.MessageRepository
                     .SearchMessageAsync(chatroomId, keyword, limit);
 
-                var userId   = CurrentUserId;
+                var userId = CurrentUserId;
                 var response = new List<MessageResponse>();
                 foreach (var m in messages)
                     response.Add(await MessageMapper.ToResponseAsync(m, _unitOfWork, userId));
@@ -126,11 +125,11 @@ namespace linksy_backend_api.Controllers
                 {
                     Success = true,
                     Message = $"Found {response.Count} result(s)",
-                    Data    = new
+                    Data = new
                     {
-                        Keyword  = keyword,
-                        Results  = response,
-                        Count    = response.Count
+                        Keyword = keyword,
+                        Results = response,
+                        Count = response.Count
                     }
                 });
             }
@@ -199,6 +198,20 @@ namespace linksy_backend_api.Controllers
             {
                 return Forbid();
             }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(
+                    "Invalid REST edit request. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    CurrentUserId
+                );
+
+                return BadRequest(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = ex.Message
+                });
+            }
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
@@ -234,10 +247,34 @@ namespace linksy_backend_api.Controllers
             {
                 return Forbid();
             }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(
+                    "Attempted to delete an already deleted message. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    CurrentUserId
+                );
+
+                return Conflict(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = ex.Message
+                });
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting message {MessageId}", messageId);
-                return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
+                _logger.LogError(
+                    ex,
+                    "Unexpected error deleting MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    CurrentUserId
+                );
+
+                return StatusCode(500, new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Không thể xóa tin nhắn."
+                });
             }
         }
 
@@ -252,13 +289,35 @@ namespace linksy_backend_api.Controllers
         {
             try
             {
-                var replies = await _messageService.GetRepliesAsync(messageId);
+                var replies = await _messageService.GetRepliesAsync(CurrentUserId, messageId);
                 return Ok(new ApiResponseDto { Success = true, Message = "Replies retrieved", Data = replies });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = ex.Message
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting replies for message {MessageId}", messageId);
-                return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
+                _logger.LogError(
+                    ex,
+                    "Unexpected error getting replies. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    CurrentUserId
+                );
+
+                return StatusCode(500, new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Không thể tải danh sách trả lời."
+                });
             }
         }
 

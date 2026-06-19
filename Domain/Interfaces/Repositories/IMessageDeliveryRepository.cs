@@ -11,5 +11,8 @@ namespace linksy_backend_api.Domain.Interfaces.Repositories
         Task CreateDeliveriesForMembersAsync(Guid messageId, List<Guid> recipientIds, CancellationToken cancellationToken = default);
         Task MarkAsDeliveredAsync(Guid messageId, Guid userId, CancellationToken cancellationToken = default);
         Task MarkAsReadAsync(Guid messageId, Guid userId, CancellationToken cancellationToken = default);
+        Task<List<MessageDelivery>> GetByMessageIdsAsync(IReadOnlyCollection<Guid> messageIds, CancellationToken cancellationToken = default);
+
+        Task<List<Guid>> MarkAllAsReadAsync(Guid chatroomId, Guid userId, DateTime readAt, CancellationToken cancellationToken = default);
     }
 }

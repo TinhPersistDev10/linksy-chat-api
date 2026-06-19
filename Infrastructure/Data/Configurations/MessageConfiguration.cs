@@ -41,9 +41,6 @@ namespace linksy_backend_api.Infrastructure.Data.Configurations
                 .HasColumnType("character varying")
                 .HasColumnName("message_type");
             entity.Property(e => e.ParentMessageId).HasColumnName("parent_message_id");
-            entity.Property(e => e.ReplyCount)
-                .HasDefaultValue(0)
-                .HasColumnName("reply_count");
             entity.Property(e => e.SenderId).HasColumnName("sender_id");
             entity.Property(e => e.SentAt)
                 .HasDefaultValueSql("now()")

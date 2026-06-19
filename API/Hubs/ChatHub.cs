@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using linksy_backend_api.API.Hubs.Errors;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.DTOs.MessagesDTOs;
+using linksy_backend_api.Models;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -27,16 +29,18 @@ namespace linksy_backend_api.Hubs
         }
         public override async Task OnConnectedAsync()
         {
-            var userId = Context.User?.FindFirst("user_id")?.Value;
-            if (!string.IsNullOrEmpty(userId))
+            try
             {
-                var userGuid = Guid.Parse(userId);
-                await _connectionManager.AddConnectionAsync(userGuid, Context.ConnectionId);
-
-                // Notify friends that user is online
+                var userId = GetCurrentUserId();
+                await _connectionManager.AddConnectionAsync(userId, Context.ConnectionId);
                 await Clients.Others.SendAsync("UserOnline", userId);
-
-                _logger.LogInformation($"User {userId} connected with connection ID: {Context.ConnectionId}");
+                _logger.LogInformation(
+                    "User {UserId} connected: {ConnectionId}", userId, Context.ConnectionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "OnConnectedAsync failed for ConnectionId={ConnectionId}",
+                    Context.ConnectionId);
             }
 
             await base.OnConnectedAsync();
@@ -44,320 +48,411 @@ namespace linksy_backend_api.Hubs
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            var userId = Context.User?.FindFirst("user_id")?.Value;
-            if (!string.IsNullOrEmpty(userId))
+            try
             {
-                var userGuid = Guid.Parse(userId);
-                await _connectionManager.RemoveConnectionAsync(userGuid, Context.ConnectionId);
+                var userId = GetCurrentUserId();
+                await _connectionManager.RemoveConnectionAsync(userId, Context.ConnectionId);
 
-                // Check if user has any other active connections
-                var hasConnections = await _connectionManager.HasConnectionsAsync(userGuid);
+                var hasConnections = await _connectionManager.HasConnectionsAsync(userId);
                 if (!hasConnections)
-                {
-                    // Notify friends that user is offline
                     await Clients.Others.SendAsync("UserOffline", userId);
-                }
-                _logger.LogInformation($"User {userId} disconnected");
+
+                _logger.LogInformation("User {UserId} disconnected", userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "OnDisconnectedAsync failed for ConnectionId={ConnectionId}",
+                    Context.ConnectionId);
             }
 
             await base.OnDisconnectedAsync(exception);
         }
-        public async Task JoinChatroom(string chatroomId)
-        {
-            await Groups.AddToGroupAsync(Context.ConnectionId, chatroomId);
 
-            var userId = Context.User?.FindFirst("user_id")?.Value;
-            _logger.LogInformation($"User {userId} joined chatroom {chatroomId}");
-
-            // Notify other members
-            await Clients.OthersInGroup(chatroomId).SendAsync("UserJoinedChatroom", new
-            {
-                UserId = userId,
-                ChatroomId = chatroomId,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        // Leave chatroom
-        public async Task LeaveChatroom(string chatroomId)
-        {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatroomId);
-
-            var userId = Context.User?.FindFirst("user_id")?.Value;
-            _logger.LogInformation($"User {userId} left chatroom {chatroomId}");
-
-            // Notify other members
-            await Clients.OthersInGroup(chatroomId).SendAsync("UserLeftChatroom", new
-            {
-                UserId = userId,
-                ChatroomId = chatroomId,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-
-        // Gửi tin nhắn
-        public async Task SendMessage(SendMessageRequest messageDto)
+        public async Task JoinChatroom(Guid chatroomId)
         {
             try
             {
-                var userIdClaim = Context.User?.FindFirst("user_id");
-                if (userIdClaim == null)
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "User ID not found in claims" });
-                    return;
-                }
-                if (!Guid.TryParse(userIdClaim.Value, out Guid userId))
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "Invalid User ID format" });
-                    return;
-                }
+                var userId = GetCurrentUserId();
+                await Groups.AddToGroupAsync(Context.ConnectionId, chatroomId.ToString());
 
-                // Lưu message vào database
-                var message = await _messageService.SendMessageAsync(userId, messageDto);
+                _logger.LogInformation(
+                    "User {UserId} joined chatroom {ChatroomId}", userId, chatroomId);
 
-                // TẠO RESPONSE CHO NGƯỜI KHÁC (IsOwn = false)
-                var responseForOthers = new
-                {
-                    MessageId = message.MessageId,
-                    ChatroomId = message.ChatroomId,
-                    SenderId = message.SenderId,
-                    SenderUsername = message.SenderUsername,
-                    SenderAvatar = message.SenderAvatar,
-                    MessageType = message.MessageType,
-                    MessageText = message.MessageText,
-                    SentAt = message.SentAt,
-                    IsOwn = false // Người khác nhận
-                };
+                await Clients.OthersInGroup(chatroomId.ToString())
+                    .SendAsync("UserJoinedChatroom", new
+                    {
+                        UserId = userId,
+                        ChatroomId = chatroomId,
+                        Timestamp = DateTime.UtcNow
+                    });
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error joining chatroom {ChatroomId}", chatroomId);
+                throw new HubException("Không thể tham gia phòng chat.");
+            }
+        }
+        // Leave chatroom
+        public async Task LeaveChatroom(Guid chatroomId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatroomId.ToString());
 
+                _logger.LogInformation(
+                    "User {UserId} left chatroom {ChatroomId}", userId, chatroomId);
 
-                var responseForSender = new
-                {
-                    MessageId = message.MessageId,
-                    ChatroomId = message.ChatroomId,
-                    SenderId = message.SenderId,
-                    SenderUsername = message.SenderUsername,
-                    SenderAvatar = message.SenderAvatar,
-                    MessageType = message.MessageType,
-                    MessageText = message.MessageText,
-                    SentAt = message.SentAt,
-                    IsOwn = true // Người gửi nhận
-                };
+                await Clients.OthersInGroup(chatroomId.ToString())
+                    .SendAsync("UserLeftChatroom", new
+                    {
+                        UserId = userId,
+                        ChatroomId = chatroomId,
+                        Timestamp = DateTime.UtcNow
+                    });
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error leaving chatroom {ChatroomId}", chatroomId);
+                throw new HubException("Không thể rời phòng chat.");
+            }
+        }
 
-                // GỬI CHO NGƯỜI KHÁC (không bao gồm người gửi)
-                await Clients.OthersInGroup(messageDto.ChatroomId.ToString())
-                    .SendAsync("ReceiveMessage", responseForOthers);
-
-
-                await Clients.Caller
-                    .SendAsync("ReceiveMessage", responseForSender);
-
-                _logger.LogInformation($"Message sent by {userId} to chatroom {messageDto.ChatroomId}");
+        // Gửi tin nhắn
+        public async Task SendMessage(SendMessageRequest request)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                // Service xử lý broadcast với IsOwn đúng per-user
+                await _messageService.SendMessageAsync(userId, request);
+            }
+            catch (HubException) { throw; }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unauthorized SendMessage");
+                throw HubErrors.MessageSendFailed();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending message");
-                await Clients.Caller.SendAsync("Error", new { message = ex.Message });
+                throw HubErrors.MessageSendFailed();
             }
         }
 
+
         // Typing indicator
-        public async Task StartTyping(string chatroomId)
-        {
-            var userId = Context.User?.FindFirst("user_id")?.Value;
-            var username = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
-
-            await Clients.OthersInGroup(chatroomId).SendAsync("UserTyping", new
-            {
-                UserId = userId,
-                Username = username,
-                ChatroomId = chatroomId
-            });
-        }
-
-        public async Task StopTyping(string chatroomId)
-        {
-            var userId = Context.User?.FindFirst("user_id")?.Value;
-
-            await Clients.OthersInGroup(chatroomId).SendAsync("UserStoppedTyping", new
-            {
-                UserId = userId,
-                ChatroomId = chatroomId
-            });
-        }
-
-        // Đánh dấu đã đọc
-        public async Task MarkAsRead(string chatroomId, string messageId)
+        public async Task StartTyping(Guid chatroomId)
         {
             try
             {
-                var userIdClaim = Context.User?.FindFirst("user_id");
-                if (userIdClaim == null)
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "User ID not found in claims" });
-                    return;
-                }
-                if (!Guid.TryParse(userIdClaim.Value, out Guid userId))
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "Invalid User ID format" });
-                    return;
-                }
+                var userId = GetCurrentUserId();
+                var username = Context.User?.FindFirst(
+                    System.Security.Claims.ClaimTypes.Name)?.Value;
 
-                // Notify sender that message was read
-                await Clients.Group(chatroomId).SendAsync("MessageRead", new
-                {
-                    MessageId = messageId,
-                    ReadBy = userId,
-                    ReadAt = DateTime.UtcNow
-                });
+                await Clients.OthersInGroup(chatroomId.ToString())
+                    .SendAsync("UserTyping", new
+                    {
+                        UserId = userId,
+                        Username = username,
+                        ChatroomId = chatroomId
+                    });
             }
+            catch (HubException) { throw; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error marking message as read");
+                _logger.LogError(ex, "Error StartTyping chatroom {ChatroomId}", chatroomId);
+            }
+        }
+
+        public async Task StopTyping(Guid chatroomId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                await Clients.OthersInGroup(chatroomId.ToString())
+                    .SendAsync("UserStoppedTyping", new
+                    {
+                        UserId = userId,
+                        ChatroomId = chatroomId
+                    });
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error StopTyping chatroom {ChatroomId}", chatroomId);
+            }
+        }
+
+        // Đánh dấu đã đọc
+        public async Task MarkAsRead(Guid chatroomId, Guid messageId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                await _messageService.MarkMessageAsReadAsync(userId, chatroomId, messageId);
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error marking MessageId={MessageId} as read", messageId);
+                throw HubErrors.MarkAsReadFailed();
             }
         }
 
         // Xóa tin nhắn
-        public async Task DeleteMessage(string chatroomId, string messageId)
+        public async Task DeleteMessage(Guid messageId)
         {
+            Guid? userId = null;
+
             try
             {
-                var userIdClaim = Context.User?.FindFirst("user_id");
-                if (userIdClaim == null)
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "User ID not found in claims" });
-                    return;
-                }
-                if (!Guid.TryParse(userIdClaim.Value, out Guid userId))
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "Invalid User ID format" });
-                    return;
-                }
-                await _messageService.DeleteMessageAsync(userId, Guid.Parse(messageId));
-
-                // Notify all members
-                await Clients.Group(chatroomId).SendAsync("MessageDeleted", new
-                {
-                    MessageId = messageId,
-                    ChatroomId = chatroomId,
-                    DeletedBy = userId,
-                    DeletedAt = DateTime.UtcNow
-                });
+                userId = GetCurrentUserId();
+                await _messageService.DeleteMessageAsync(userId.Value, messageId);
+            }
+            catch (HubException)
+            {
+                _logger.LogWarning(
+                    "Unauthenticated delete attempt. MessageId={MessageId}, ConnectionId={ConnectionId}",
+                    messageId,
+                    Context.ConnectionId
+                );
+                throw;
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning(
+                    "Message not found while deleting. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    userId
+                );
+                throw HubErrors.MessageNotFound();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                _logger.LogWarning(
+                    "Forbidden message delete. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    userId
+                );
+                throw HubErrors.MessageDeleteForbidden();
+            }
+            catch (InvalidOperationException)
+            {
+                _logger.LogWarning(
+                    "Attempted to delete an already deleted message. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    userId
+                );
+                throw HubErrors.MessageAlreadyDeleted();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting message");
-                await Clients.Caller.SendAsync("Error", new { message = ex.Message });
+                _logger.LogError(
+                    ex,
+                    "Unexpected error deleting message. MessageId={MessageId}, UserId={UserId}, ConnectionId={ConnectionId}",
+                    messageId,
+                    userId,
+                    Context.ConnectionId
+                );
+                throw HubErrors.MessageDeleteFailed();
             }
         }
 
         // Chỉnh sửa tin nhắn
-        public async Task EditMessage(string chatroomId, string messageId, string newText)
+        public async Task EditMessage(Guid messageId, string newText)
         {
+            Guid? userId = null;
+
             try
             {
-                var userIdClaim = Context.User?.FindFirst("user_id");
-                if (userIdClaim == null)
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "User ID not found in claims" });
-                    return;
-                }
-                if (!Guid.TryParse(userIdClaim.Value, out Guid userId))
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "Invalid User ID format" });
-                    return;
-                }
+                userId = GetCurrentUserId();
 
-                var updatedMessage = await _messageService.EditMessageAsync(userId, Guid.Parse(messageId), newText);
+                await _messageService.EditMessageAsync(
+                    userId.Value,
+                    messageId,
+                    newText
+                );
+            }
+            catch (HubException)
+            {
+                _logger.LogWarning(
+                    "Unauthenticated edit attempt. MessageId={MessageId}, ConnectionId={ConnectionId}",
+                    messageId,
+                    Context.ConnectionId
+                );
 
-                // Notify all members
-                await Clients.Group(chatroomId).SendAsync("MessageEdited", updatedMessage);
+                throw;
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning(
+                    "Message not found while editing. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    userId
+                );
+
+                throw HubErrors.MessageNotFound();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                _logger.LogWarning(
+                    "Forbidden message edit. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    userId
+                );
+
+                throw HubErrors.MessageEditForbidden();
+            }
+            catch (ArgumentException)
+            {
+                _logger.LogWarning(
+                    "Invalid message edit request. MessageId={MessageId}, UserId={UserId}, TextLength={TextLength}",
+                    messageId,
+                    userId,
+                    newText?.Length ?? 0
+                );
+
+                throw HubErrors.InvalidRequest();
+            }
+            catch (InvalidOperationException)
+            {
+                _logger.LogWarning(
+                    "Attempted to edit deleted message. MessageId={MessageId}, UserId={UserId}",
+                    messageId,
+                    userId
+                );
+
+                throw HubErrors.MessageAlreadyDeleted();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error editing message");
-                await Clients.Caller.SendAsync("Error", new { message = ex.Message });
+                _logger.LogError(
+                    ex,
+                    "Unexpected error editing message. MessageId={MessageId}, UserId={UserId}, ConnectionId={ConnectionId}",
+                    messageId,
+                    userId,
+                    Context.ConnectionId
+                );
+
+                throw HubErrors.MessageEditFailed();
             }
         }
 
         // Reply to message
-        public async Task ReplyToMessage(string chatroomId, string parentMessageId, string replyText)
+        public async Task ReplyToMessage(
+    Guid chatroomId,
+    Guid parentMessageId,
+    string replyText)
         {
+            Guid? userId = null;
+
             try
             {
-                var userIdClaim = Context.User?.FindFirst("user_id");
-                if (userIdClaim == null)
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "User ID not found in claims" });
-                    return;
-                }
-                if (!Guid.TryParse(userIdClaim.Value, out Guid userId))
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "Invalid User ID format" });
-                    return;
-                }
+                userId = GetCurrentUserId();
 
-                var messageDto = new SendMessageRequest
-                {
-                    ChatroomId = Guid.Parse(chatroomId),
-                    MessageType = "text",
-                    MessageText = replyText,
-                    ParentMessageId = Guid.Parse(parentMessageId)
-                };
+                await _messageService.SendMessageAsync(
+                    userId.Value,
+                    new SendMessageRequest
+                    {
+                        ChatroomId = chatroomId,
+                        MessageType = "text",
+                        MessageText = replyText,
+                        ParentMessageId = parentMessageId
+                    }
+                );
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning(
+                    "Parent message not found. ParentMessageId={ParentMessageId}, ChatroomId={ChatroomId}, UserId={UserId}",
+                    parentMessageId, chatroomId, userId
+                );
 
-                var message = await _messageService.SendMessageAsync(userId, messageDto);
+                throw HubErrors.ParentMessageNotFound();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                _logger.LogWarning(
+                    "Forbidden message reply. ParentMessageId={ParentMessageId}, ChatroomId={ChatroomId}, UserId={UserId}",
+                    parentMessageId, chatroomId, userId
+                );
 
-                await Clients.Group(chatroomId).SendAsync("ReceiveMessage", message);
+                throw HubErrors.MessageReplyForbidden();
+            }
+            catch (ArgumentException)
+            {
+                throw HubErrors.InvalidRequest();
+            }
+            catch (InvalidOperationException)
+            {
+                throw HubErrors.ParentMessageDeleted();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error replying to message");
-                await Clients.Caller.SendAsync("Error", new { message = ex.Message });
+                _logger.LogError(
+                    ex,
+                    "Unexpected reply error. ParentMessageId={ParentMessageId}, ChatroomId={ChatroomId}, UserId={UserId}, ConnectionId={ConnectionId}",
+                    parentMessageId,
+                    chatroomId,
+                    userId,
+                    Context.ConnectionId
+                );
+
+                throw HubErrors.MessageReplyFailed();
             }
         }
 
         // Gửi file
-        public async Task SendFile(string chatroomId, string fileName, string fileUrl, string fileType)
+        public async Task SendFile(Guid chatroomId, string fileName, string fileUrl, string fileType)
         {
             try
             {
-                var userIdClaim = Context.User?.FindFirst("user_id");
-                if (userIdClaim == null)
+                var userId = GetCurrentUserId();
+                var request = new SendMessageRequest
                 {
-                    await Clients.Caller.SendAsync("Error", new { message = "User ID not found in claims" });
-                    return;
-                }
-                if (!Guid.TryParse(userIdClaim.Value, out Guid userId))
-                {
-                    await Clients.Caller.SendAsync("Error", new { message = "Invalid User ID format" });
-                    return;
-                }
-
-                var messageDto = new SendMessageRequest
-                {
-                    ChatroomId = Guid.Parse(chatroomId),
-                    MessageType = fileType, // "image", "file", "video", "audio"
+                    ChatroomId = chatroomId,
+                    MessageType = fileType, // "image" | "file" | "video" | "audio"
                     MessageText = fileUrl
                 };
-
-                var message = await _messageService.SendMessageAsync(userId, messageDto);
-
-                await Clients.Group(chatroomId).SendAsync("ReceiveMessage", message);
+                await _messageService.SendMessageAsync(userId, request);
             }
+            catch (HubException) { throw; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending file");
-                await Clients.Caller.SendAsync("Error", new { message = ex.Message });
+                _logger.LogError(ex, "Error sending file to chatroom {ChatroomId}", chatroomId);
+                throw HubErrors.FileSendFailed();
             }
         }
 
         // Gửi notification
-        public async Task SendNotificationToUser(string recipientUserId, object notification)
+        public async Task SendNotificationToUser(Guid recipientUserId, object notification)
         {
-            var connections = await _connectionManager.GetConnectionsAsync(Guid.Parse(recipientUserId));
-
-            if (connections.Any())
+            try
             {
-                await Clients.Clients(connections).SendAsync("ReceiveNotification", notification);
+                var connections = await _connectionManager
+                    .GetConnectionsAsync(recipientUserId);
+
+                if (connections.Any())
+                    await Clients.Clients(connections)
+                        .SendAsync("ReceiveNotification", notification);
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error sending notification to UserId={UserId}", recipientUserId);
+            }
+        }
+        private Guid GetCurrentUserId()
+        {
+            var value = Context.User?.FindFirst("user_id")?.Value;
+            if (!Guid.TryParse(value, out var userId))
+                throw HubErrors.Unauthorized();
+            return userId;
         }
 
         // Video/Voice call signaling

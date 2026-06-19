@@ -96,5 +96,31 @@ namespace linksy_backend_api.Infrastructure.Repositories
             if (!delivery.DeliveredAt.HasValue) delivery.DeliveredAt = DateTime.UtcNow;
             _context.MessageDeliveries.Update(delivery);
         }
+
+        public async Task<List<MessageDelivery>> GetByMessageIdsAsync(IReadOnlyCollection<Guid> messageIds, CancellationToken cancellationToken = default)
+        {
+            return await _context.MessageDeliveries
+                .Where(d => messageIds.Contains(d.MessageId))
+                .ToListAsync(cancellationToken);
+        }
+
+        public async Task<List<Guid>> MarkAllAsReadAsync(Guid chatroomId, Guid userId, DateTime readAt, CancellationToken cancellationToken = default)
+        {
+            var deliveries = await _context.MessageDeliveries
+                .Where(d =>
+                    d.UserId == userId &&
+                    d.Message.ChatroomId == chatroomId &&
+                    d.Status != "read")
+                .ToListAsync(cancellationToken);
+
+            foreach (var delivery in deliveries)
+            {
+                delivery.Status = "read";
+                delivery.DeliveredAt ??= readAt;
+                delivery.ReadAt ??= readAt;
+            }
+
+            return deliveries.Select(d => d.MessageId).ToList();
+        }
     }
 }

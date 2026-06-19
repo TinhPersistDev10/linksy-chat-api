@@ -128,7 +128,7 @@ builder.Services.AddAuthentication(option =>
     // SignalR JWT authentication
     options.Events = new JwtBearerEvents
     {
-        // ✅ FIX 1: Đọc JWT từ httpOnly cookie thay vì Authorization header
+        // Đọc JWT từ httpOnly cookie thay vì Authorization header
         OnMessageReceived = context =>
         {
             // Đọc accessToken từ cookie
@@ -138,7 +138,6 @@ builder.Services.AddAuthentication(option =>
                 context.Token = accessToken;
             }
 
-            // Giữ lại logic SignalR cũ
             var queryToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
             if (!string.IsNullOrEmpty(queryToken) && path.StartsWithSegments("/hubs/chat"))
@@ -217,7 +216,6 @@ builder.Services.AddScoped<INotificationSettingsRepository, NotificationSettings
 builder.Services.AddScoped<IPrivacySettingsRepository, PrivacySettingsRepository>();
 builder.Services.AddScoped<IUserStatusRepository, UserStatusRepository>();
 builder.Services.AddScoped<ITokenRepository, TokenRepository>();
-// Generic Repository for models without specific repository
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
 // Register Services
@@ -274,21 +272,15 @@ builder.Services.Configure<RouteOptions>(options =>
 {
     options.LowercaseUrls = true;
 });
-
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.SingleLine = true;
+    options.IncludeScopes = true;
+    options.UseUtcTimestamp = true;
+    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff 'UTC' ";
+});
 
 var app = builder.Build();
-// builder.Services.AddHealthChecks()
-//     .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection"));
-
-// if (app.Environment.IsDevelopment())
-// {
-//     app.UseSwagger();
-//     app.UseSwaggerUI(c =>
-//     {
-//         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Linksy API V1");
-//         c.RoutePrefix = string.Empty;
-//     });
-// }
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {

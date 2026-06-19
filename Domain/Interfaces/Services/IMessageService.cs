@@ -14,7 +14,9 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task DeleteMessageAsync(Guid userId, Guid messageId);
         Task<MessageResponse> EditMessageAsync(Guid userId, Guid messageId, string newText);
         Task MarkMessageAsReadAsync(Guid userId, Guid chatroomId, Guid messageId);
-        Task<List<MessageResponse>> GetRepliesAsync(Guid messageId);
+        Task MarkAllMessagesAsReadAsync(Guid userId, Guid chatroomId);
+        Task MarkMessageAsDeliveredAsync(Guid userId, Guid messageId);
+        Task<List<MessageResponse>> GetRepliesAsync(Guid userId,Guid messageId);
         Task CreateMessageNotificationsAsync(Message message, Guid senderId);
     }
 }

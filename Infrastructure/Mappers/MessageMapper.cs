@@ -24,45 +24,66 @@ namespace linksy_backend_api.Infrastructure.Mappers
                     .FirstOrDefaultAsync(m => m.MessageId == message.ParentMessageId.Value);
 
                 if (parent != null)
+                {
+                    var parentIsDeleted = parent.IsDeleted ?? false;
+
                     parentMessageDto = new MessageResponse
                     {
-                        MessageId      = parent.MessageId,
-                        SenderId       = parent.SenderId ?? Guid.Empty,
+                        MessageId = parent.MessageId,
+                        ChatroomId = parent.ChatroomId,
+
+                        SenderId = parent.SenderId ?? Guid.Empty,
                         SenderUsername = parent.Sender?.Username ?? string.Empty,
                         SenderFullname = parent.Sender?.Fullname ?? string.Empty,
-                        MessageText    = parent.MessageText ?? string.Empty,
-                        MessageType    = parent.MessageType,
-                        SentAt         = parent.SentAt ?? DateTime.UtcNow
-                    };
-            }
+                        SenderAvatar = DefaultAvatarHelper.GetAvatarOrDefault(
+                            parent.Sender?.Avatar,
+                            parent.Sender?.UserId,
+                            username: parent.Sender?.Username,
+                            fullname: parent.Sender?.Fullname
+                        ),
 
-            // Reply count
-            var replyCount = await unitOfWork.Messages.CountAsync(m =>
-                m.ParentMessageId == message.MessageId &&
-                (m.IsDeleted == null || m.IsDeleted == false));
+                        MessageType = parent.MessageType,
+                        MessageText = parentIsDeleted
+                            ? "Tin nhắn đã bị xóa"
+                            : parent.MessageText ?? string.Empty,
+
+                        ParentMessageId = parent.ParentMessageId,
+                        ParentMessage = null,
+
+                        IsEdited = parent.IsEdited ?? false,
+                        IsDeleted = parentIsDeleted,
+                        IsOwn = currentUserId.HasValue &&
+                                parent.SenderId == currentUserId.Value,
+
+                        SentAt = parent.SentAt ?? DateTime.UtcNow,
+                        EditedAt = parent.EditedAt,
+                        DeletedAt = parent.DeletedAt,
+                        Attachments = null
+                    };
+                }
+            }
 
             return new MessageResponse
             {
-                MessageId       = message.MessageId,
-                ChatroomId      = message.ChatroomId,
-                SenderId        = message.SenderId ?? Guid.Empty,
-                SenderUsername  = sender?.Username ?? string.Empty,
-                SenderFullname  = sender?.Fullname ?? string.Empty,
-                SenderAvatar    = DefaultAvatarHelper.GetAvatarOrDefault(
+                MessageId = message.MessageId,
+                ChatroomId = message.ChatroomId,
+                SenderId = message.SenderId ?? Guid.Empty,
+                SenderUsername = sender?.Username ?? string.Empty,
+                SenderFullname = sender?.Fullname ?? string.Empty,
+                SenderAvatar = DefaultAvatarHelper.GetAvatarOrDefault(
                                     sender?.Avatar, sender?.UserId,
                                     username: sender?.Username,
                                     fullname: sender?.Fullname),
-                MessageType     = message.MessageType,
-                MessageText     = message.MessageText ?? string.Empty,
+                MessageType = message.MessageType,
+                MessageText = message.MessageText ?? string.Empty,
                 ParentMessageId = message.ParentMessageId,
-                ParentMessage   = parentMessageDto,
-                ReplyCount      = replyCount,
-                IsEdited        = message.IsEdited ?? false,
-                IsDeleted       = message.IsDeleted ?? false,
-                IsOwn           = currentUserId.HasValue && message.SenderId == currentUserId,
-                SentAt          = message.SentAt ?? DateTime.UtcNow,
-                EditedAt        = message.EditedAt,
-                DeletedAt       = message.DeletedAt
+                ParentMessage = parentMessageDto,
+                IsEdited = message.IsEdited ?? false,
+                IsDeleted = message.IsDeleted ?? false,
+                IsOwn = currentUserId.HasValue && message.SenderId == currentUserId,
+                SentAt = message.SentAt ?? DateTime.UtcNow,
+                EditedAt = message.EditedAt,
+                DeletedAt = message.DeletedAt
             };
         }
     }

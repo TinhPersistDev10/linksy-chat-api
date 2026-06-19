@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using linksy_backend_api.Models;
@@ -11,9 +12,11 @@ using linksy_backend_api.Models;
 namespace linksy_backend_api.Infrastructure.Migrations
 {
     [DbContext(typeof(LinksyDbContext))]
-    partial class LinksyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618204809_RemoveMessageReplyCount")]
+    partial class RemoveMessageReplyCount
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

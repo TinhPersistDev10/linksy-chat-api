@@ -12,7 +12,8 @@ using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Core.DTOs.Requests.Notifications;
-
+using linksy_backend_api.Domain.Events.Messages;
+using linksy_backend_api.Domain.Entities.Models;
 namespace linksy_backend_api.Infrastructure.Services
 {
     public class MessageService : IMessageService
@@ -70,9 +71,22 @@ namespace linksy_backend_api.Infrastructure.Services
             // Dùng MessageRepository đã tách
             var messages = await _unitOfWork.MessageRepository.GetChatroomMessagesAsync(chatroomId, page, pageSize);
 
+            var messageIds = messages.Select(message => message.MessageId).ToArray();
+            var deliveries = messageIds.Length == 0
+                ? new List<MessageDelivery>()
+                : await _unitOfWork.MessageDeliveryRepository.GetByMessageIdsAsync(messageIds);
+            var deliveriesByMessage = deliveries
+                .GroupBy(delivery => delivery.MessageId)
+                .ToDictionary(group => group.Key, group => group.ToList());
+
             var result = new List<MessageResponse>();
             foreach (var message in messages)
-                result.Add(await MessageMapper.ToResponseAsync(message, _unitOfWork, userId));
+            {
+                var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
+                deliveriesByMessage.TryGetValue(message.MessageId, out var messageDeliveries);
+                ApplyDeliverySummary(response, messageDeliveries ?? new());
+                result.Add(response);
+            }
 
             result.Reverse(); // tin cũ ở trên, tin mới ở dưới
             // if (page == 1)
@@ -84,12 +98,36 @@ namespace linksy_backend_api.Infrastructure.Services
             return result;
         }
 
-        public async Task<List<MessageResponse>> GetRepliesAsync(Guid messageId)
+        public async Task<List<MessageResponse>> GetRepliesAsync(Guid userId, Guid messageId)
         {
-            var replies = await _unitOfWork.MessageRepository.GetRepliesAsync(messageId);
+            var parent = await _unitOfWork.Messages.GetByIdAsync(messageId)
+                ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
+
+            var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(member =>
+                member.ChatroomId == parent.ChatroomId &&
+                member.UserId == userId &&
+                member.LeftAt == null
+            );
+
+            if (!isMember)
+                throw new UnauthorizedAccessException(
+                    "Bạn không có quyền xem các tin nhắn trả lời."
+                );
+
+            var replies = await _unitOfWork.MessageRepository
+                .GetRepliesAsync(messageId);
+
             var result = new List<MessageResponse>();
-            foreach (var r in replies)
-                result.Add(await MessageMapper.ToResponseAsync(r, _unitOfWork));
+
+            foreach (var reply in replies)
+            {
+                result.Add(await MessageMapper.ToResponseAsync(
+                    reply,
+                    _unitOfWork,
+                    userId
+                ));
+            }
+
             return result;
         }
 
@@ -99,6 +137,17 @@ namespace linksy_backend_api.Infrastructure.Services
 
         public async Task<MessageResponse> SendMessageAsync(Guid userId, SendMessageRequest messageDto)
         {
+            messageDto.MessageText = messageDto.MessageText?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(messageDto.MessageText))
+                throw new ArgumentException(
+                    "Nội dung tin nhắn không được để trống."
+                );
+
+            if (messageDto.MessageText.Length > 5000)
+                throw new ArgumentException(
+                    "Tin nhắn không được vượt quá 5000 ký tự."
+                );
             var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(rm =>
                 rm.ChatroomId == messageDto.ChatroomId &&
                 rm.UserId == userId &&
@@ -113,10 +162,19 @@ namespace linksy_backend_api.Infrastructure.Services
 
             if (messageDto.ParentMessageId.HasValue)
             {
-                var parent = await _unitOfWork.Messages.GetByIdAsync(messageDto.ParentMessageId.Value)
-                    ?? throw new ArgumentException("Không tìm thấy tin nhắn gốc.");
+                var parent = await _unitOfWork.Messages
+                    .GetByIdAsync(messageDto.ParentMessageId.Value)
+                    ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn gốc.");
+
                 if (parent.ChatroomId != messageDto.ChatroomId)
-                    throw new ArgumentException("Tin nhắn gốc không thuộc phòng chat này.");
+                    throw new ArgumentException(
+                        "Tin nhắn gốc không thuộc phòng chat này."
+                    );
+
+                if (parent.IsDeleted == true)
+                    throw new InvalidOperationException(
+                        "Không thể trả lời tin nhắn đã bị xóa."
+                    );
             }
 
             await _unitOfWork.BeginTransactionAsync();
@@ -158,7 +216,13 @@ namespace linksy_backend_api.Infrastructure.Services
             catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync();
-                _logger.LogError(ex, "Error sending message");
+                _logger.LogError(
+                    ex,
+                    "Database transaction failed while sending message. ChatroomId={ChatroomId}, UserId={UserId}, ParentMessageId={ParentMessageId}",
+                    messageDto.ChatroomId,
+                    userId,
+                    messageDto.ParentMessageId
+                );
                 throw;
             }
             try
@@ -171,6 +235,9 @@ namespace linksy_backend_api.Infrastructure.Services
                     message.MessageId);
             }
             var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
+            var newMessageDeliveries = await _unitOfWork.MessageDeliveryRepository
+                .GetByMessageAsync(message.MessageId);
+            ApplyDeliverySummary(response, newMessageDeliveries);
             // await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1, 50));
             try
             {
@@ -194,60 +261,115 @@ namespace linksy_backend_api.Infrastructure.Services
 
         public async Task<MessageResponse> EditMessageAsync(Guid userId, Guid messageId, string newText)
         {
+            newText = newText?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(newText))
+                throw new ArgumentException("Nội dung tin nhắn không được để trống.");
+            if (newText.Length > 5000)
+                throw new ArgumentException("Tin nhắn không được vượt quá 5000 ký tự.");
+
             var message = await _unitOfWork.Messages.GetByIdAsync(messageId)
                 ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
 
             if (message.SenderId != userId)
-                throw new UnauthorizedAccessException("Bạn không có quyền sửa tin nhắn này.");
+                throw new UnauthorizedAccessException(
+                    "Bạn không có quyền sửa tin nhắn này."
+                );
 
             if (message.IsDeleted == true)
-                throw new InvalidOperationException("Không thể sửa tin nhắn đã xóa.");
+                throw new InvalidOperationException(
+                    "Không thể sửa tin nhắn đã xóa."
+                );
+
             await _unitOfWork.BeginTransactionAsync();
             try
             {
-
                 message.MessageText = newText;
                 message.IsEdited = true;
                 message.EditedAt = DateTime.UtcNow;
+
                 _unitOfWork.Messages.Update(message);
                 await _unitOfWork.SaveChangesAsync();
                 await _unitOfWork.CommitTransactionAsync();
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-
                 await _unitOfWork.RollbackTransactionAsync();
-                _logger.LogError(ex, "Error editing MessageId={MessageId}", messageId);
-            }
 
-            await _cache.RemoveAsync(CacheKeys.Messages(message.ChatroomId, 1, 50));
-            try
-            {
-                await _hubContext.Clients.Group(message.ChatroomId.ToString())
-                    .SendAsync("MessageEdited",
-                     new
-                     {
-                         MessageId = messageId,
-                         NewText = newText,
-                         EditedAt = message.EditedAt
-                     });
+                _logger.LogError(
+                    ex,
+                    "Database transaction failed while editing MessageId={MessageId}, ChatroomId={ChatroomId}, UserId={UserId}",
+                    message.MessageId,
+                    message.ChatroomId,
+                    userId
+                );
 
-            }
-            catch (System.Exception ex)
-            {
-
-                _logger.LogError(ex, "SignalR broadcast failed for MessageEdited MessageId={MessageId}", messageId);
                 throw;
             }
+            _logger.LogInformation(
+                "Message edited successfully. MessageId={MessageId}, ChatroomId={ChatroomId}, EditedBy={EditedBy}, EditedAt={EditedAt}",
+                message.MessageId,
+                message.ChatroomId,
+                userId,
+                message.EditedAt
+            );
 
-            return await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
+            try
+            {
+                await _cache.RemoveAsync(
+                    CacheKeys.Messages(message.ChatroomId, 1, 50)
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Cache invalidation failed after editing MessageId={MessageId}, ChatroomId={ChatroomId}, UserId={UserId}",
+                    message.MessageId,
+                    message.ChatroomId,
+                    userId
+                );
+            }
+
+            var editedEvent = new MessageEditedEvent
+            {
+                MessageId = message.MessageId,
+                ChatroomId = message.ChatroomId,
+                MessageText = message.MessageText ?? string.Empty,
+                IsEdited = message.IsEdited ?? false,
+                EditedAt = message.EditedAt,
+                EditedBy = userId
+            };
+
+            try
+            {
+                await _hubContext.Clients
+                    .Group(message.ChatroomId.ToString())
+                    .SendAsync("MessageEdited", editedEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "SignalR broadcast failed for MessageEdited. MessageId={MessageId}, ChatroomId={ChatroomId}, EditedBy={EditedBy}",
+                    message.MessageId,
+                    message.ChatroomId,
+                    userId
+                );
+            }
+
+            return await MessageMapper.ToResponseAsync(
+                message,
+                _unitOfWork,
+                userId
+            );
         }
 
         public async Task DeleteMessageAsync(Guid userId, Guid messageId)
         {
             var message = await _unitOfWork.Messages.GetByIdAsync(messageId)
                 ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
-
+            if (message.IsDeleted == true)
+                throw new InvalidOperationException("Tin nhắn đã bị xóa.");
             bool isOwner = message.SenderId == userId;
             bool canDelete = isOwner || await _unitOfWork.MemberPermissionRepository
                 .HasPermissionAsync(userId, message.ChatroomId, PermissionType.CanDeleteMessages);
@@ -267,23 +389,88 @@ namespace linksy_backend_api.Infrastructure.Services
                 await _unitOfWork.CommitTransactionAsync();
 
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 await _unitOfWork.RollbackTransactionAsync();
-                _logger.LogError(ex, "Error deleting MessageId={MessageId}", messageId);
-            }
 
-            await _cache.RemoveAsync(CacheKeys.Messages(message.ChatroomId, 1, 50));
+                _logger.LogError(
+                    ex,
+                    "Database transaction failed while deleting MessageId={MessageId}, ChatroomId={ChatroomId}, UserId={UserId}",
+                    message.MessageId,
+                    message.ChatroomId,
+                    userId
+                );
+
+                throw;
+            }
+            _logger.LogInformation(
+                "Message deleted successfully. MessageId={MessageId}, ChatroomId={ChatroomId}, DeletedBy={DeletedBy}, DeletedAt={DeletedAt}",
+                message.MessageId,
+                message.ChatroomId,
+                userId,
+                message.DeletedAt
+            );
             try
             {
-
-                await _hubContext.Clients.Group(message.ChatroomId.ToString())
-                .SendAsync("MessageDeleted", new { MessageId = messageId, DeletedBy = userId });
+                await _cache.RemoveAsync(
+                    CacheKeys.Messages(message.ChatroomId, 1, 50)
+                );
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                _logger.LogError(ex, "SignalR broadcast failed for MessageDeleted MessageId={MessageId}", messageId);
+                _logger.LogWarning(
+                    ex,
+                    "Cache invalidation failed after deleting MessageId={MessageId}, ChatroomId={ChatroomId}, UserId={UserId}",
+                    message.MessageId,
+                    message.ChatroomId,
+                    userId
+                );
             }
+            var deletedEvent = new MessageDeletedEvent
+            {
+                MessageId = message.MessageId,
+                ChatroomId = message.ChatroomId,
+                DeletedBy = userId,
+                DeletedAt = message.DeletedAt!.Value
+            };
+
+            try
+            {
+                await _hubContext.Clients
+                    .Group(message.ChatroomId.ToString())
+                    .SendAsync("MessageDeleted", deletedEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "SignalR broadcast failed for MessageDeleted. MessageId={MessageId}, ChatroomId={ChatroomId}, DeletedBy={DeletedBy}",
+                    message.MessageId,
+                    message.ChatroomId,
+                    userId
+                );
+            }
+        }
+
+        public async Task MarkMessageAsDeliveredAsync(Guid userId, Guid messageId)
+        {
+            var message = await _unitOfWork.Messages.GetByIdAsync(messageId)
+                ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
+            var delivery = await _unitOfWork.MessageDeliveryRepository
+                .GetByMessageAndUserAsync(messageId, userId)
+                ?? throw new UnauthorizedAccessException("Không có delivery cho người dùng.");
+
+            await _unitOfWork.MessageDeliveryRepository.MarkAsDeliveredAsync(messageId, userId);
+            await _unitOfWork.SaveChangesAsync();
+            var deliveries = await _unitOfWork.MessageDeliveryRepository.GetByMessageAsync(messageId);
+            var deliveredEvent = new MessageDeliveredEvent
+            {
+                ChatroomId = message.ChatroomId,
+                DeliveredBy = userId,
+                DeliveredAt = delivery.DeliveredAt ?? DateTime.UtcNow,
+                Message = BuildDeliverySummary(messageId, deliveries)
+            };
+            await BroadcastMessageDeliveredAsync(deliveredEvent);
         }
 
         public async Task MarkMessageAsReadAsync(Guid userId, Guid chatroomId, Guid messageId)
@@ -297,17 +484,148 @@ namespace linksy_backend_api.Infrastructure.Services
             if (message.ChatroomId != chatroomId)
                 throw new InvalidOperationException("Tin nhắn không thuộc chatroom này.");
 
-            member.LastReadAt = message.SentAt;
+            if (!member.LastReadAt.HasValue || member.LastReadAt < message.SentAt)
+            {
+                member.LastReadAt = message.SentAt;
+            }
             _unitOfWork.ChatroomMembers.Update(member);
 
             await _unitOfWork.MessageDeliveryRepository.MarkAsReadAsync(messageId, userId);
 
             await _unitOfWork.SaveChangesAsync();
+            var deliveries = await _unitOfWork.MessageDeliveryRepository.GetByMessageAsync(messageId);
+            var readAt = deliveries.FirstOrDefault(delivery => delivery.UserId == userId)?.ReadAt
+                ?? DateTime.UtcNow;
+            var readEvent = new MessageReadEvent
+            {
+                ChatroomId = chatroomId,
+                ReadBy = userId,
+                ReadAt = readAt,
+                Message = BuildDeliverySummary(messageId, deliveries)
+            };
+            await BroadcastMessageReadAsync(readEvent);
         }
 
         // ─────────────────────────────────────────────────────────────────────
         // NOTIFICATIONS
         // ─────────────────────────────────────────────────────────────────────
+
+        public async Task MarkAllMessagesAsReadAsync(Guid userId, Guid chatroomId)
+        {
+            var member = await _unitOfWork.ChatroomMemberRepository
+                .GetActiveMemberAsync(chatroomId, userId)
+                ?? throw new UnauthorizedAccessException("Not a chatroom member.");
+            var readAt = DateTime.UtcNow;
+            var messageIds = await _unitOfWork.MessageDeliveryRepository
+                .MarkAllAsReadAsync(chatroomId, userId, readAt);
+            member.LastReadAt = readAt;
+            _unitOfWork.ChatroomMembers.Update(member);
+            await _unitOfWork.SaveChangesAsync();
+            await BroadcastAllMessagesReadAsync(chatroomId, userId, readAt, messageIds);
+        }
+
+        private static void ApplyDeliverySummary(
+            MessageResponse response,
+            IEnumerable<MessageDelivery> deliveries)
+        {
+            var summary = BuildDeliverySummary(response.MessageId, deliveries);
+            response.RecipientCount = summary.RecipientCount;
+            response.DeliveredCount = summary.DeliveredCount;
+            response.ReadCount = summary.ReadCount;
+            response.DeliveryStatus = summary.DeliveryStatus;
+        }
+
+        private static MessageDeliverySummaryEvent BuildDeliverySummary(
+            Guid messageId,
+            IEnumerable<MessageDelivery> deliveries)
+        {
+            var items = deliveries.ToList();
+            var recipientCount = items.Count;
+            var deliveredCount = items.Count(item => item.Status is "delivered" or "read");
+            var readCount = items.Count(item => item.Status == "read");
+
+            return new MessageDeliverySummaryEvent
+            {
+                MessageId = messageId,
+                RecipientCount = recipientCount,
+                DeliveredCount = deliveredCount,
+                ReadCount = readCount,
+                DeliveryStatus = recipientCount > 0 && readCount == recipientCount
+                    ? "read"
+                    : recipientCount > 0 && deliveredCount == recipientCount
+                        ? "delivered"
+                        : "sent"
+            };
+        }
+
+        private async Task BroadcastMessageDeliveredAsync(MessageDeliveredEvent deliveredEvent)
+        {
+            try
+            {
+                await _hubContext.Clients.Group(deliveredEvent.ChatroomId.ToString())
+                    .SendAsync("MessageDelivered", deliveredEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "SignalR broadcast failed for MessageDelivered. MessageId={MessageId}, ChatroomId={ChatroomId}, DeliveredBy={DeliveredBy}",
+                    deliveredEvent.Message.MessageId,
+                    deliveredEvent.ChatroomId,
+                    deliveredEvent.DeliveredBy);
+            }
+        }
+
+        private async Task BroadcastMessageReadAsync(MessageReadEvent readEvent)
+        {
+            try
+            {
+                await _hubContext.Clients.Group(readEvent.ChatroomId.ToString())
+                    .SendAsync("MessageRead", readEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "SignalR broadcast failed for MessageRead. MessageId={MessageId}, ChatroomId={ChatroomId}, ReadBy={ReadBy}",
+                    readEvent.Message.MessageId,
+                    readEvent.ChatroomId,
+                    readEvent.ReadBy);
+            }
+        }
+
+        private async Task BroadcastAllMessagesReadAsync(
+            Guid chatroomId,
+            Guid userId,
+            DateTime readAt,
+            IReadOnlyCollection<Guid> messageIds)
+        {
+            var deliveries = messageIds.Count == 0
+                ? new List<MessageDelivery>()
+                : await _unitOfWork.MessageDeliveryRepository.GetByMessageIdsAsync(messageIds);
+            var readEvent = new AllMessagesReadEvent
+            {
+                ChatroomId = chatroomId,
+                ReadBy = userId,
+                ReadAt = readAt,
+                Messages = deliveries.GroupBy(item => item.MessageId)
+                    .Select(group => BuildDeliverySummary(group.Key, group))
+                    .ToList()
+            };
+
+            _logger.LogInformation(
+                "Messages marked as read. ChatroomId={ChatroomId}, UserId={UserId}, Count={Count}, ReadAt={ReadAt}",
+                chatroomId, userId, messageIds.Count, readAt);
+            try
+            {
+                await _hubContext.Clients.Group(chatroomId.ToString())
+                    .SendAsync("AllMessagesRead", readEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "SignalR broadcast failed for AllMessagesRead. ChatroomId={ChatroomId}, ReadBy={ReadBy}, Count={Count}",
+                    chatroomId, userId, messageIds.Count);
+            }
+        }
 
         public async Task CreateMessageNotificationsAsync(Message message, Guid senderId)
         {

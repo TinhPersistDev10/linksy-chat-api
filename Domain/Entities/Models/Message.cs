@@ -18,8 +18,6 @@ public partial class Message
 
     public Guid? ParentMessageId { get; set; }
 
-    public int? ReplyCount { get; set; }
-
     public bool? IsEdited { get; set; }
 
     public bool? IsDeleted { get; set; }
