@@ -183,7 +183,8 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(
             "http://localhost:3000",
             "https://linksy-frontend-ashen.vercel.app",
-            "https://linksy-frontend-git-dev-tihnsnguyeenx281-3273s-projects.vercel.app")
+            "https://linksy-frontend-96ct06a7k-tinhsnguyeenx281-3273s-projects.vercel.app/"
+            )
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
