@@ -175,21 +175,16 @@ builder.Services.AddAuthentication(option =>
 // Authorization
 builder.Services.AddAuthorization();
 
-//CORS
-builder.Services.AddCors(options =>
+// ── CORS ──────────────────────────────────────────────────────────────────────
+var allowAnyOrigin = builder.Configuration.GetValue<bool>("Cors:AllowAnyOrigin");
+
+// Danh sách origins tĩnh (production + local dev)
+var staticOrigins = new[]
 {
-    options.AddPolicy("Frontend", policy =>
-    {
-        policy.WithOrigins(
-            "http://localhost:3000",
-            "https://linksy-frontend-ashen.vercel.app",
-            "https://linksy-frontend-96ct06a7k-tinhsnguyeenx281-3273s-projects.vercel.app/"
-            )
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
-    });
-});
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://linksy-frontend-ashen.vercel.app"
+};
 // SignalR
 builder.Services.AddSignalR(options =>
 {
