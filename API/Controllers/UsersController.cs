@@ -97,6 +97,50 @@ namespace linksy_backend_api.API.Controllers
             }
         }
 
+        [HttpGet("search")]
+        [ProducesResponseType(typeof(ApiResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponseDto), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> SearchUsers([FromQuery] string query, [FromQuery] int limit = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return BadRequest(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Từ khóa tìm kiếm là bắt buộc",
+                });
+            }
+            query = query.Trim();
+            limit = Math.Clamp(limit, 1, 50);
+            try
+            {
+                var users = await _userService.SearchUsersAsync(
+                    CurrentUserId,
+                    query,
+                    limit);
+
+                return Ok(new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "Tìm kiếm người dùng thành công.",
+                    Data = users
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error searching users. RequestedBy={UserId}, Query={Query}",
+                    CurrentUserId,
+                    query);
+
+                return StatusCode(500, new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Không thể tìm kiếm người dùng."
+                });
+            }
+        }
         // ─────────────────────────────────────────────────────────────────────
         // POST /api/users/avatar
         // ─────────────────────────────────────────────────────────────────────

@@ -44,7 +44,7 @@ namespace linksy_backend_api.Infrastructure.Services
             if (chatroom.RoomType == "direct")
                 return new ApiResponseDto { Success = false, Message = "Không thể gửi lời mời vào chat 1-1." };
 
-            var caller = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(userId,chatroomId)
+            var caller = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId,userId)
                 ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
 
             bool isAdmin   = caller.MemberRole == "admin";

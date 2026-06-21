@@ -13,7 +13,7 @@ namespace linksy_backend_api.Infrastructure.Cache
         public static string UserRoles(Guid userId)        => $"user:roles:{userId}";
 
         // ── Chatroom ─────────────────────────────────────────────────────────
-        public static string ChatroomList(Guid userId, bool includeArchived, string type)     
+        public static string ChatroomList(Guid userId, bool includeArchived, string? type)     
         => $"chatroom:list:{userId}:archived:{includeArchived}:type:{type}";
         public static string ChatroomDetail(Guid userId, Guid chatroomId)       
         => $"chatroom:detail:{chatroomId}:user:{userId}";

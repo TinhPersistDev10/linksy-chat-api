@@ -1,35 +1,38 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.AdminDTOs;
 using linksy_backend_api.Core.DTOs.Responses.Users;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.DTOs.Responses.Users;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.DTOs.UserDTO;
 using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Infrastructure.Mappers;
 using linksy_backend_api.Models;
+using linksy_backend_api.Repositories;
+using linksy_backend_api.Repositories.IRepositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration.UserSecrets;
+
+
 
 namespace linksy_backend_api.Infrastructure.Services
 {
     public class UserService : IUserService
+
     {
 
-        private readonly LinksyDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IFileService _fileService;
-        private readonly ICacheService _cache;       // ← thêm
+        private readonly ICacheService _cache;
         private readonly ILogger<UserService> _logger;
 
         public UserService(
-            LinksyDbContext context,
+           IUnitOfWork unitOfWork,
             IFileService fileService,
-            ICacheService cache,                     // ← thêm
+            ICacheService cache,
             ILogger<UserService> logger)
         {
-            _context = context;
+            _unitOfWork = unitOfWork;
             _fileService = fileService;
             _cache = cache;
             _logger = logger;
@@ -37,32 +40,50 @@ namespace linksy_backend_api.Infrastructure.Services
         //GET USER CURRENT 
         public async Task<UserInfoDto> GetCurrentUserAsync(Guid userId)
         {
-            var cacheKey = CacheKeys.UserProfile(userId);
-
-            return await _cache.GetOrSetAsync(cacheKey, async () =>
+            try
             {
-                var user = await _context.Users.AsNoTracking()
-                    .FirstOrDefaultAsync(u => u.UserId == userId)
-                    ?? throw new KeyNotFoundException("User not found");
+                var cacheKey = CacheKeys.UserProfile(userId);
 
-                return UserMapper.ToResponse(user);
-            }, CacheKeys.MediumTtl);
+                return await _cache.GetOrSetAsync(cacheKey, async () =>
+                {
+                    var user = await _unitOfWork.UserRepository.GetByIdAsNoTrackingAsync(userId)
+                        ?? throw new KeyNotFoundException("User not found");
+
+                    return UserMapper.ToResponse(user);
+                }, CacheKeys.MediumTtl);
+
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning("User profile not found. UserId={userId}", userId);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get user profile. UserId = {userId}", userId);
+                throw;
+            }
         }
         //EDIT USER
         public async Task<UserInfoDto> UpdateUserAsync(Guid userId, UpdateUserByAdminDto updateUserDto)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId)
+            var user = await _unitOfWork.UserRepository.GetByIdAsync(userId)
             ?? throw new KeyNotFoundException("User not found");
-            if (!string.IsNullOrWhiteSpace(updateUserDto.Username) && updateUserDto.Username != user.Username)
+
+            if (!string.IsNullOrWhiteSpace(updateUserDto.Username)
+                && updateUserDto.Username != user.Username)
             {
-                bool taken = await _context.Users.AnyAsync(u => u.Username == updateUserDto.Username && u.UserId != userId);
+                bool taken = await _unitOfWork.UserRepository.IsUsernameExistsAsync(updateUserDto.Username, userId);
+
                 if (taken) { throw new InvalidOperationException("User already taken"); }
-                user.Username = updateUserDto.Username;
+                user.Username = updateUserDto.Username.Trim();
             }
-            if (!string.IsNullOrWhiteSpace(updateUserDto.Email) && updateUserDto.Email != user.Email)
+            if (!string.IsNullOrWhiteSpace(updateUserDto.Email)
+                && updateUserDto.Email != user.Email)
             {
-                bool taken = await _context.Users.AnyAsync(u => u.Email == updateUserDto.Email && u.UserId != userId);
-                if (taken) throw new InvalidOperationException("Email already taken");
+                bool taken = await _unitOfWork.UserRepository.IsEmailExistsAsync(updateUserDto.Email, userId);
+                if (taken)
+                    throw new InvalidOperationException("Email already taken");
                 user.Email = updateUserDto.Email;
                 user.IsEmailVerified = false;
                 user.EmailVerifiedAt = null;
@@ -89,11 +110,21 @@ namespace linksy_backend_api.Infrastructure.Services
             }
 
             user.UpdatedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation("User {UserId} profile updated", userId);
-            await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
+            _unitOfWork.UserRepository.Update(user);
+            await _unitOfWork.SaveChangesAsync();
+            try
+            {
+                await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogWarning(ex, "Profile updated but cache invalidation failed. UserId = {userId}, UpdateUser = {updateuserDto}", userId, updateUserDto);
+                throw;
+            }
+            _logger.LogInformation(
+                "User profile updated successfully. UserId={UserId}, UpdatedAt={UpdatedAt}",
+                userId,
+                user.UpdatedAt);
             return UserMapper.ToResponse(user);
         }
         //UPDATE AVATAR
@@ -101,7 +132,7 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             try
             {
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _unitOfWork.UserRepository.GetByIdAsync(userId);
                 if (user == null)
                 {
                     return new AvatarResponse { Success = false, Message = "User not found" };
@@ -120,7 +151,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 user.Avatar = avatarUrl;
                 user.UpdatedAt = DateTime.UtcNow;
 
-                await _context.SaveChangesAsync();
+                await _unitOfWork.SaveChangesAsync();
                 await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
                 return new AvatarResponse
                 {
@@ -140,7 +171,7 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             try
             {
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _unitOfWork.UserRepository.GetByIdAsync(userId);
                 if (user == null)
                 {
                     return new AvatarResponse
@@ -160,7 +191,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 // Set về avatar mặc định
                 user.Avatar = DefaultAvatarHelper.GetDefaultUserAvatar(userId, username: user.Username, fullname: user.Fullname);
                 user.UpdatedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
+                await _unitOfWork.SaveChangesAsync();
 
                 return new AvatarResponse
                 {
@@ -177,6 +208,45 @@ namespace linksy_backend_api.Infrastructure.Services
                     Success = false,
                     Message = ex.Message
                 };
+            }
+        }
+
+        public async Task<List<UserLookupResponse>> SearchUsersAsync(Guid currentUserId, string query, int limit = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return [];
+
+            try
+            {
+                var users = await _unitOfWork.UserRepository.SearchUsersAsync(query, currentUserId);
+                var result = users.Select(user => new UserLookupResponse
+                {
+                    UserId = user.UserId,
+                    Username = user.Username,
+                    Fullname = user.Fullname,
+                    Avatar = DefaultAvatarHelper.GetAvatarOrDefault(
+                        user.Avatar,
+                        user.UserId),
+                    Bio = user.Bio
+
+                }).ToList();
+                _logger.LogInformation("User search completed. RequestedBy={UserId}, QueryLength={QueryLength}, Limit={Limit}, ResultCount={ResultCount}",
+                    currentUserId,
+                    query.Length,
+                    limit,
+                    result.Count);
+                return result;
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(
+                           ex,
+                           "User search failed. RequestedBy={UserId}, QueryLength={QueryLength}, Limit={Limit}",
+                           currentUserId,
+                           query.Length,
+                           limit
+                           );
+
+                throw;
             }
         }
     }

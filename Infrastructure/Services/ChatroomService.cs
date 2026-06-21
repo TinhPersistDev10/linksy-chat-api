@@ -1,4 +1,5 @@
 using linksy_backend_api.Core.DTOs.Responses.Users;
+using linksy_backend_api.Core.DTOs.Requests.Notifications;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.DTOs.Responses.Chatrooms;
 using linksy_backend_api.DTOs;
@@ -20,7 +21,7 @@ using linksy_backend_api.Domain.Interfaces.Services;
 
 namespace linksy_backend_api.Services
 {
-    public class ChatroomService : IChatroomService
+    public partial class ChatroomService : IChatroomService
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<ChatroomService> _logger;
@@ -28,13 +29,15 @@ namespace linksy_backend_api.Services
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IFileService _fileService;
         private readonly ICacheService _cached;
+        private readonly INotificationService _notificationService;
         public ChatroomService(
             IUnitOfWork unitOfWork,
             ILogger<ChatroomService> logger,
             IConnectionManager connectionManager,
             IHubContext<ChatHub> hubContext,
             IFileService fileService,
-            ICacheService cached)
+            ICacheService cached,
+            INotificationService notificationService)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
@@ -42,6 +45,7 @@ namespace linksy_backend_api.Services
             _hubContext = hubContext;
             _fileService = fileService;
             _cached = cached;
+            _notificationService = notificationService;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -148,7 +152,9 @@ namespace linksy_backend_api.Services
             var cacheKey = CacheKeys.ChatroomList(userId, includeArchived, roomType);
 
             var cached = await _cached.GetAsync<List<ChatroomResponseDto>>(cacheKey);
-            // ////
+            if (cached is not null)
+                return cached;
+
             var chatrooms = await _unitOfWork.ChatroomRepository.GetUserChatroomsAsync(userId, includeArchived, roomType);
 
             var result = new List<ChatroomResponseDto>();
@@ -298,7 +304,7 @@ namespace linksy_backend_api.Services
         // MEMBERS
         // ─────────────────────────────────────────────────────────────────────
 
-        public async Task<ApiResponseDto> AddMembersAsync(Guid userId, Guid chatroomId, AddMembersRequest request)
+        private async Task<ApiResponseDto> AddMembersLegacyAsync(Guid userId, Guid chatroomId, AddMembersRequest request)
         {
             //get chatroom muon add member
             var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId);
@@ -355,7 +361,7 @@ namespace linksy_backend_api.Services
             return new ApiResponseDto { Success = true, Message = $"Đã thêm {addedMemberIds.Count} thành viên." };
         }
 
-        public async Task<ApiResponseDto> RemoveMemberAsync(Guid userId, Guid chatroomId, Guid memberId)
+        private async Task<ApiResponseDto> RemoveMemberLegacyAsync(Guid userId, Guid chatroomId, Guid memberId)
         {
             if (userId == memberId) return new ApiResponseDto { Success = false, Message = "Dùng LeaveChatroom để tự rời nhóm." };
 
@@ -388,7 +394,7 @@ namespace linksy_backend_api.Services
             return new ApiResponseDto { Success = true, Message = "Đã xóa thành viên." };
         }
 
-        public async Task<ApiResponseDto> LeaveChatroomAsync(Guid userId, Guid chatroomId)
+        private async Task<ApiResponseDto> LeaveChatroomLegacyAsync(Guid userId, Guid chatroomId)
         {
             var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId)
                 ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");

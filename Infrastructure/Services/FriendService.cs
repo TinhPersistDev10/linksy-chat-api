@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.Requests.Friends;
 using linksy_backend_api.Core.DTOs.Responses.Friends;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.DTOs.Responses.Users;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.Block;
 using linksy_backend_api.DTOs.FriendDTO;

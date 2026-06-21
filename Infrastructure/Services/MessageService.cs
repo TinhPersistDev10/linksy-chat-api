@@ -493,6 +493,7 @@ namespace linksy_backend_api.Infrastructure.Services
             await _unitOfWork.MessageDeliveryRepository.MarkAsReadAsync(messageId, userId);
 
             await _unitOfWork.SaveChangesAsync();
+            await InvalidateChatroomListCacheAsync(userId);
             var deliveries = await _unitOfWork.MessageDeliveryRepository.GetByMessageAsync(messageId);
             var readAt = deliveries.FirstOrDefault(delivery => delivery.UserId == userId)?.ReadAt
                 ?? DateTime.UtcNow;
@@ -521,7 +522,19 @@ namespace linksy_backend_api.Infrastructure.Services
             member.LastReadAt = readAt;
             _unitOfWork.ChatroomMembers.Update(member);
             await _unitOfWork.SaveChangesAsync();
+            await InvalidateChatroomListCacheAsync(userId);
             await BroadcastAllMessagesReadAsync(chatroomId, userId, readAt, messageIds);
+        }
+
+        private async Task InvalidateChatroomListCacheAsync(Guid userId)
+        {
+            await Task.WhenAll(
+                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, null)),
+                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, null)),
+                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, "direct")),
+                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, "group")),
+                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, "direct")),
+                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, "group")));
         }
 
         private static void ApplyDeliverySummary(

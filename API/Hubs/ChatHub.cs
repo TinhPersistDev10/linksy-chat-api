@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using linksy_backend_api.API.Hubs.Errors;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Interfaces.Repositories;
 using linksy_backend_api.DTOs.MessagesDTOs;
 using linksy_backend_api.Models;
 using linksy_backend_api.Services.IServices;
@@ -18,12 +19,19 @@ namespace linksy_backend_api.Hubs
         private readonly IChatroomService _chatService;
         private readonly IMessageService _messageService;
         private readonly IConnectionManager _connectionManager;
+        private readonly IChatroomAccessService _chatroomAccessService;
         private readonly ILogger<ChatHub> _logger;
 
-        public ChatHub(IChatroomService chatService, IMessageService messageService, IConnectionManager connectionManager, ILogger<ChatHub> logger)
+        public ChatHub(
+            IChatroomService chatService,
+            IMessageService messageService,
+            IConnectionManager connectionManager,
+            IChatroomAccessService chatroomAccessService,
+            ILogger<ChatHub> logger)
         {
             _chatService = chatService;
             _connectionManager = connectionManager;
+            _chatroomAccessService = chatroomAccessService;
             _logger = logger;
             _messageService = messageService;
         }
@@ -73,6 +81,7 @@ namespace linksy_backend_api.Hubs
             try
             {
                 var userId = GetCurrentUserId();
+                await _chatroomAccessService.EnsureMemberAsync(chatroomId, userId);
                 await Groups.AddToGroupAsync(Context.ConnectionId, chatroomId.ToString());
 
                 _logger.LogInformation(

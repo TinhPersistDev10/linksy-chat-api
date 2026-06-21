@@ -66,7 +66,7 @@ namespace linksy_backend_api.API.Controllers
                 return StatusCode(500, new
                 {
                     success = false,
-                    message = "C? l?i x?y ra khi l?y th?ng b?o"
+                    message = "Có lỗi xảy ra khi lấy thông báo"
                 });
             }
         }
@@ -88,7 +88,49 @@ namespace linksy_backend_api.API.Controllers
                 return StatusCode(500, new { success = false, message = "C? l?i x?y ra khi ??nh d?u th?ng b?o ?? ??c" });
             }
         }
+        [HttpGet("unread-count")]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(401)]
+        public async Task<IActionResult> GetUnreadCount()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var count = await _notificationService.GetUnreadCountAsync(userId);
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        unreadCount = count
+                    }
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Unauthorized request for notification unread count");
 
+                return Unauthorized(new
+                {
+                    success = false,
+                    message = "Không xác định được người dùng."
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error getting notification unread count");
+
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Có lỗi xảy ra khi lấy số thông báo chưa đọc."
+                });
+            }
+        }
         [HttpPost("read-all")]
         [ProducesResponseType(200)]
         public async Task<IActionResult> MarkAllAsRead()

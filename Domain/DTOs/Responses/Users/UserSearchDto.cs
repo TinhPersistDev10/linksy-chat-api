@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
+
+//Tìm kiếm liên quan tới kết bạn
 namespace linksy_backend_api.DTOs.UserDTO
 {
     public class UserSearchDto

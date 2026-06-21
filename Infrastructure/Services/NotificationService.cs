@@ -61,6 +61,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 await _unitOfWork.Notifications.AddAsync(entity);
                 await _unitOfWork.SaveChangesAsync();
+                await _cache.RemoveAsync(CacheKeys.NotifUnreadCount(request.UserId));
                 await SendRealTimeAsync(entity);
                 return entity;
             }
@@ -93,9 +94,9 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 await _unitOfWork.Notifications.AddRangeAsync(entities);
                 await _unitOfWork.SaveChangesAsync();
-
-                // foreach (var entity in entities)
-                //     await SendRealTimeAsync(entity);
+                var affectedUserIds = entities.Select(entity => entity.UserId).Distinct();
+                await Task.WhenAll(affectedUserIds.Select(userId =>
+                    _cache.RemoveAsync(CacheKeys.NotifUnreadCount(userId))));
                 var realtimeTasks = entities.Select(entity => SendRealTimeAsync(entity));
                 await Task.WhenAll(realtimeTasks);
             }
@@ -231,40 +232,40 @@ namespace linksy_backend_api.Infrastructure.Services
         public async Task NotifyNewMessageAsync(Message message, User sender, Chatroom chatroom, List<Guid> recipientIds)
         {
             try
-    {
-        var roomName = chatroom.RoomType == "direct"
-            ? sender.Fullname ?? sender.Username ?? "Chat"
-            : chatroom.RoomName ?? "Chat";
+            {
+                var roomName = chatroom.RoomType == "direct"
+                    ? sender.Fullname ?? sender.Username ?? "Chat"
+                    : chatroom.RoomName ?? "Chat";
 
-        foreach (var recipientId in recipientIds)
-        {
-            var connections = await _connectionManager.GetConnectionsAsync(recipientId);
-            if (!connections.Any()) continue;
-
-            await _hubContext.Clients.Clients(connections)
-                .SendAsync("ReceiveMessageNotification", new
+                foreach (var recipientId in recipientIds)
                 {
-                    NotificationType = "new_message",
-                    ChatroomId = chatroom.ChatroomId,
-                    SenderId = sender.UserId,
-                    SenderName = sender.Fullname ?? sender.Username,
-                    Title = roomName,
-                    Body = message.MessageType switch
-                    {
-                        "image" => "Đã gửi một ảnh",
-                        "file" => "Đã gửi một file",
-                        "voice" => "Đã gửi tin nhắn thoại",
-                        _ => message.MessageText ?? string.Empty
-                    },
-                    SentAt = message.SentAt
-                });
-        }
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Error sending realtime message notification");
-        throw;
-    }
+                    var connections = await _connectionManager.GetConnectionsAsync(recipientId);
+                    if (!connections.Any()) continue;
+
+                    await _hubContext.Clients.Clients(connections)
+                        .SendAsync("ReceiveMessageNotification", new
+                        {
+                            NotificationType = "new_message",
+                            ChatroomId = chatroom.ChatroomId,
+                            SenderId = sender.UserId,
+                            SenderName = sender.Fullname ?? sender.Username,
+                            Title = roomName,
+                            Body = message.MessageType switch
+                            {
+                                "image" => "Đã gửi một ảnh",
+                                "file" => "Đã gửi một file",
+                                "voice" => "Đã gửi tin nhắn thoại",
+                                _ => message.MessageText ?? string.Empty
+                            },
+                            SentAt = message.SentAt
+                        });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending realtime message notification");
+                throw;
+            }
         }
 
         public async Task NotifyNewFriendRequestAsync(Guid senderId, Guid receiverId, Guid requestId)

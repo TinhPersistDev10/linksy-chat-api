@@ -26,6 +26,10 @@ namespace linksy_backend_api.Repositories
             return await FirstOrDefaultAsync(u => u.Email == emailOrUsername || u.Username == emailOrUsername);
         }
 
+        public async Task<User?> GetByIdAsNoTrackingAsync(Guid userId)
+        {
+            return await QueryAsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+        }
 
         public async Task<User?> GetByUsernameAsync(string username)
         {
@@ -34,10 +38,10 @@ namespace linksy_backend_api.Repositories
 
         public async Task<List<Guid>> GetExistingUserIdsAsync(List<Guid> userIds)
         {
-           return await _context.Users
-        .Where(u => userIds.Contains(u.UserId))
-        .Select(u => u.UserId)
-        .ToListAsync();
+            return await _context.Users
+         .Where(u => userIds.Contains(u.UserId))
+         .Select(u => u.UserId)
+         .ToListAsync();
         }
 
         public async Task<List<User>> GetOnlineUsersAsync(List<Guid> userIds)
@@ -69,18 +73,21 @@ namespace linksy_backend_api.Repositories
             && (excludeUserId == null || u.UserId != excludeUserId));
 
 
-        public async Task<List<User>> SearchUsersAsync(string searchTerm, int limit = 20)
+        public async Task<List<User>> SearchUsersAsync(string searchTerm, Guid excludedUserId, int limit = 20)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return new List<User>();
+                return [];
 
             var term = searchTerm.Trim().ToLower();
 
-            return await QueryAsNoTracking()  // ✅ thêm AsNoTracking
-                .Where(u => (u.IsActive ?? false) &&
-                    (u.Username.ToLower().Contains(term) ||
-                     (u.Fullname != null && u.Fullname.ToLower().Contains(term))))
-                .Take(limit)
+            return await QueryAsNoTracking()
+                .Where(u => u.UserId != excludedUserId
+                    && (u.IsActive ?? false)
+                    && (u.Username.ToLower().Contains(term)
+                    || (u.Fullname != null
+                    && u.Fullname.ToLower().Contains(term)))
+                ).OrderBy(u => u.Fullname ?? u.Username)
+                .Take(Math.Clamp(limit, 1, 50))
                 .ToListAsync();
         }
     }

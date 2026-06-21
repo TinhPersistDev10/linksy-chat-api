@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
+//Thông tin chi tiết (profile cá nhân)
 namespace linksy_backend_api.DTOs.UserDTO
 {
     public class UserInfoDto
