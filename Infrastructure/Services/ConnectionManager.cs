@@ -1,17 +1,10 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using linksy_backend_api.Models;
 using linksy_backend_api.Services.IServices;
 
 namespace linksy_backend_api.Services
 {
     public class ConnectionManager : IConnectionManager
     {
-        // ConcurrentDictionary<string, byte> is the standard thread-safe set pattern.
-        // byte is a zero-allocation placeholder value — only the keys matter.
         private static readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, byte>> _userConnections
             = new();
 

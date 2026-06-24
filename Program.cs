@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Text;
-using DotNetEnv;
 using linksy_backend_api.Core.Interfaces.Repositories;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Interfaces.Repositories;
@@ -21,8 +20,6 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-Env.Load();
-
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -31,6 +28,7 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 builder.Logging.SetMinimumLevel(
     builder.Environment.IsDevelopment() ? LogLevel.Debug : LogLevel.Information);
+
 builder.Logging.AddSimpleConsole(options =>
 {
     options.SingleLine = true;
@@ -198,22 +196,11 @@ var extraOrigins = builder.Configuration
 
 var allStaticOrigins = staticOrigins.Concat(extraOrigins).ToArray();
 
-// Vercel config
-// VercelProjectName : tiền tố tên project,  vd: "linksy-frontend"
-// VercelTeamSlug   : phần team trong preview URL, vd: "tinhsnguyeenx281-3273s-projects"
-//                    để trống ("") = bỏ qua kiểm tra team (cho phép mọi team có cùng project name)
 var vercelProjectName = builder.Configuration.GetValue<string>("Cors:VercelProjectName")
                         ?? "linksy-frontend";
 var vercelTeamSlug = builder.Configuration.GetValue<string>("Cors:VercelTeamSlug")
                      ?? "";   // vd: "tinhsnguyeenx281-3273s-projects"
 
-// Vercel preview URL patterns:
-//   1. Team-scoped  : <project>-<git-hash>-<team-slug>.vercel.app
-//   2. Personal     : <project>-<git-hash>-<username>.vercel.app
-//   3. Alias tĩnh   : <project>-git-<branch>-<team-slug>.vercel.app
-//
-// Chiến lược: host phải bắt đầu bằng <projectName>- VÀ kết thúc bằng .vercel.app
-// Nếu vercelTeamSlug được chỉ định → kiểm tra thêm phần team.
 static bool IsVercelPreviewUrl(string origin, string projectName, string teamSlug)
 {
     try
@@ -341,14 +328,14 @@ builder.Services.AddDirectoryBrowser();
 builder.Services.AddMemoryCache();
 
 var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled", true);
-var redisConn = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING");
+var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString");
 
 if (redisEnabled && !string.IsNullOrEmpty(redisConn))
 {
     builder.Services.AddStackExchangeRedisCache(options =>
     {
         options.Configuration = redisConn;
-        options.InstanceName = Environment.GetEnvironmentVariable("REDIS_INSTANCE_NAME") ?? "linksy:";
+        options.InstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName");
     });
     Console.WriteLine("✅ Redis cache enabled");
 }

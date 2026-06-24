@@ -12,11 +12,9 @@ namespace linksy_backend_api.Infrastructure.Repositories
     public class BlockedUserRepository : Repository<BlockedUser>, IBlockedUserRepository
     {
         private readonly LinksyDbContext _context;
-        // private readonly ILogger<BlockedUserRepository> _logger;
 
         public BlockedUserRepository(LinksyDbContext context) : base(context)
         {
-            // _logger = logger;
             _context = context;
         }
 
@@ -31,10 +29,8 @@ namespace linksy_backend_api.Infrastructure.Repositories
                         (b.BlockerUserId == user2Id &&
                         b.BlockedUserId == user1Id));
             }
-            catch (System.Exception ex)
+            catch
             {
-                // _logger.LogError(ex, "Error checking if {User1Id} and {User2Id} are blocked",
-                //                     user1Id, user2Id);
                 throw;
             }
         }
@@ -49,7 +45,6 @@ namespace linksy_backend_api.Infrastructure.Repositories
             }
             catch
             {
-                // _logger.LogError(ex, "Error counting blocked users for {UserId}", userId);
                 throw;
             }
         }
@@ -66,9 +61,6 @@ namespace linksy_backend_api.Infrastructure.Repositories
             }
             catch
             {
-
-                // _logger.LogError(ex, "Error getting block from {BlockerId} to {BlockedUserId}",
-                //     blockerId, blockedUserId);
                 throw;
             }
         }
@@ -85,8 +77,6 @@ namespace linksy_backend_api.Infrastructure.Repositories
             }
             catch
             {
-
-                // _logger.LogError(ex, "Error getting users who blocked {UserId}", userId);
                 throw;
             }
         }
@@ -103,7 +93,6 @@ namespace linksy_backend_api.Infrastructure.Repositories
             }
             catch
             {
-                //     _logger.LogError(ex, "Error getting blocked users for {UserId}", userId);
                 throw;
             }
         }
@@ -120,7 +109,6 @@ namespace linksy_backend_api.Infrastructure.Repositories
             }
             catch
             {
-                // _logger.LogError(ex, "Error getting blocked users with details for {UserId}", userId);
                 throw;
             }
         }
@@ -135,7 +123,6 @@ namespace linksy_backend_api.Infrastructure.Repositories
             }
             catch
             {
-                // _logger.LogError(ex, "Error checking if {BlockerId} has blocked {BlockedUserId}", blockerId, blockedUserId);
                 throw;
             }
         }

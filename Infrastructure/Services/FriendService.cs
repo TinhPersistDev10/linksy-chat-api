@@ -148,7 +148,7 @@ namespace linksy_backend_api.Services
                         {
                             UserId = friend.UserId,
                             Username = friend.Username,
-                            Fullname = friend.Fullname,
+                            Fullname = friend.Fullname ?? "Lỗi hiển thị",
                             Avatar = DefaultAvatarHelper.GetAvatarOrDefault(friend.Avatar, friend.UserId),
                             FriendsSince = friendship.CreatedAt ?? DateTime.UtcNow
                         });

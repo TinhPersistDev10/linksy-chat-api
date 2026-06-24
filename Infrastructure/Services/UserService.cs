@@ -7,13 +7,7 @@ using linksy_backend_api.DTOs.UserDTO;
 using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Infrastructure.Mappers;
-using linksy_backend_api.Models;
-using linksy_backend_api.Repositories;
 using linksy_backend_api.Repositories.IRepositories;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration.UserSecrets;
-
-
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -217,7 +211,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
             try
             {
-                var users = await _unitOfWork.UserRepository.SearchUsersAsync(query, currentUserId);
+                var users = await _unitOfWork.UserRepository.SearchUsersAsync(query, currentUserId, limit);
                 var result = users.Select(user => new UserLookupResponse
                 {
                     UserId = user.UserId,

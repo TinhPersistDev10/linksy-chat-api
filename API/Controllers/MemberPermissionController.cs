@@ -263,7 +263,13 @@ namespace linksy_backend_api.API.Controllers
                     return BadRequest(new ApiResponseDto { Success = false, Message = "Cannot mute yourself" });
 
                 var result = await _permissionService.MuteMemberAsync(chatroomId, userId, request);
-                return Ok(new ApiResponseDto { Success = true, Message = result.Message, Data = result.Data });
+                return Ok(
+                    new ApiResponseDto
+                    {
+                        Success = true,
+                        Message = result.Message,
+                        Data = result.Data ?? new ApiResponseDto { Success = false, Message = " error" }
+                    });
             }
             catch (UnauthorizedAccessException) { return Forbid(); }
             catch (KeyNotFoundException ex) { return NotFound(new ApiResponseDto { Success = false, Message = ex.Message }); }

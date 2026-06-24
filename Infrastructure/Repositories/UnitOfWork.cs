@@ -52,7 +52,6 @@ namespace linksy_backend_api.Repositories
             PrivacySettingsRepo = new Repository<PrivacySettings>(_context);
             UserStatusRepo = new Repository<UserStatus>(_context);
 
-            // ?? Specialized ??????????????????????????????????????????????????
             ChatroomRepository = new ChatroomRepository(_context);
             ChatroomMemberRepository = new ChatroomMemberRepository(_context);
             GroupInvitationRepository = new GroupInvitationRepository(_context);

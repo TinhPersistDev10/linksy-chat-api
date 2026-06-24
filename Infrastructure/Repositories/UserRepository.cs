@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
 using Microsoft.EntityFrameworkCore;

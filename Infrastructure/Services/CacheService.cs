@@ -1,6 +1,5 @@
 // Infrastructure/Services/CacheService.cs
 using System.Text.Json;
-using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Interfaces.Services;
 using Microsoft.Extensions.Caching.Distributed;
 
@@ -10,8 +9,8 @@ namespace linksy_backend_api.Infrastructure.Services
     {
         private readonly IDistributedCache _cache;
         private readonly ILogger<CacheService> _logger;
-        private readonly bool _enabled;
-        private readonly TimeSpan _defaultExpiry;
+        private readonly bool _enabled; // Bật hoặc tắt logic cache trong cacheService
+        private readonly TimeSpan _defaultExpiry; //Thời gian sống default của data cache (tính bằng s)
 
         private static readonly JsonSerializerOptions _jsonOptions = new()
         {
@@ -42,7 +41,6 @@ namespace linksy_backend_api.Infrastructure.Services
             {
                 _logger.LogDebug("Cache GET. Key={Key}", key);
 
-
                 var data = await _cache.GetStringAsync(key);
                 if (data is null)
                 {
@@ -55,7 +53,7 @@ namespace linksy_backend_api.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Redis GET failed for key: {Key}", key);
-                return null; // Cache miss — fall through to DB
+                return null; 
             }
         }
 
@@ -70,7 +68,6 @@ namespace linksy_backend_api.Infrastructure.Services
                 {
                     AbsoluteExpirationRelativeToNow = expiry ?? _defaultExpiry
                 };
-
                 var data = JsonSerializer.Serialize(value, _jsonOptions);
                 await _cache.SetStringAsync(key, data, options);
             }
@@ -96,9 +93,6 @@ namespace linksy_backend_api.Infrastructure.Services
         public async Task RemoveByPrefixAsync(string prefix)
         {
             if (!_enabled) return;
-
-            // StackExchange.Redis không hỗ trợ wildcard delete qua IDistributedCache
-            // Cần inject IConnectionMultiplexer trực tiếp cho feature này
             _logger.LogDebug("RemoveByPrefix called for prefix: {Prefix}", prefix);
             await Task.CompletedTask;
         }

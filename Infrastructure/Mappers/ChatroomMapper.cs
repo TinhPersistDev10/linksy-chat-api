@@ -102,7 +102,7 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 IsArchived = chatroom.IsArchived ?? false,
                 CreatedAt = chatroom.CreatedAt ?? DateTime.UtcNow,
                 LastActivityAt = chatroom.LastActivityAt,
-                LastMessage = lastMessageDto,
+                LastMessage = lastMessageDto ?? new MessageResponse(),
                 Members = memberDtos,
                 UnreadCount = unreadCount,
                 MyMemberInfo = myMemberInfo

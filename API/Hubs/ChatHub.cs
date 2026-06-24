@@ -16,7 +16,6 @@ namespace linksy_backend_api.Hubs
     [Authorize]
     public class ChatHub : Hub
     {
-        private readonly IChatroomService _chatService;
         private readonly IMessageService _messageService;
         private readonly IConnectionManager _connectionManager;
         private readonly IChatroomAccessService _chatroomAccessService;
@@ -29,7 +28,6 @@ namespace linksy_backend_api.Hubs
             IChatroomAccessService chatroomAccessService,
             ILogger<ChatHub> logger)
         {
-            _chatService = chatService;
             _connectionManager = connectionManager;
             _chatroomAccessService = chatroomAccessService;
             _logger = logger;

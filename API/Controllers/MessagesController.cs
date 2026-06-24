@@ -67,7 +67,7 @@ namespace linksy_backend_api.Controllers
                     }
                 });
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
@@ -159,7 +159,7 @@ namespace linksy_backend_api.Controllers
                     new { chatroomId = request.ChatroomId },
                     new ApiResponseDto { Success = true, Message = "Message sent", Data = message });
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
