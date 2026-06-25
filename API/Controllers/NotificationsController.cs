@@ -85,7 +85,7 @@ namespace linksy_backend_api.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error marking notification {NotificationId} as read", notificationId);
-                return StatusCode(500, new { success = false, message = "C? l?i x?y ra khi ??nh d?u th?ng b?o ?? ??c" });
+                return StatusCode(500, new { success = false, message = "Có lỗi xảy ra khi đánh dấu thông báo đã đọc" });
             }
         }
         [HttpGet("unread-count")]
@@ -144,7 +144,7 @@ namespace linksy_backend_api.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error marking all notifications as read");
-                return StatusCode(500, new { success = false, message = "C? l?i x?y ra khi ??nh d?u t?t c? th?ng b?o ?? ??c" });
+                return StatusCode(500, new { success = false, message = "Có lỗi xảy ra khi đánh dấu tất cả thông báo đã đọc" });
             }
         }
 
@@ -162,7 +162,7 @@ namespace linksy_backend_api.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting notification {NotificationId}", notificationId);
-                return StatusCode(500, new { success = false, message = "C? l?i x?y ra khi x?a th?ng b?o" });
+                return StatusCode(500, new { success = false, message = "Có lỗi xảy ra khi xóa thông báo" });
             }
         }
 
@@ -179,7 +179,7 @@ namespace linksy_backend_api.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting all notifications");
-                return StatusCode(500, new { success = false, message = "C? l?i x?y ra khi x?a t?t c? th?ng b?o" });
+                return StatusCode(500, new { success = false, message = "Có lỗi xảy ra khi xóa tất cả thông báo" });
             }
         }
     }

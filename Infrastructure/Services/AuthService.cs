@@ -84,6 +84,7 @@ namespace linksy_backend_api.Services
                 Avatar = user.Avatar ?? string.Empty,
                 Bio = user.Bio ?? string.Empty,
                 DateOfBirth = user.DateOfBirth,
+                IsActive = user.IsActive ?? false,
                 IsEmailVerified = user.IsEmailVerified ?? false,
                 CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
                 LastLoginAt = user.LastLoginAt ?? DateTime.UtcNow

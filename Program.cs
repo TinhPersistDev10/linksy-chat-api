@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using StackExchange.Redis;
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 var builder = WebApplication.CreateBuilder(args);
@@ -77,7 +78,7 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// ── Database ──────────────────────────────────────────────────────────────────
+//  Database 
 builder.Services.AddDbContext<LinksyDbContext>(options =>
 {
     options.UseNpgsql(
@@ -91,7 +92,7 @@ builder.Services.AddDbContext<LinksyDbContext>(options =>
     }
 });
 
-// ── JWT ───────────────────────────────────────────────────────────────────────
+//  JWT 
 var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
@@ -199,7 +200,7 @@ var allStaticOrigins = staticOrigins.Concat(extraOrigins).ToArray();
 var vercelProjectName = builder.Configuration.GetValue<string>("Cors:VercelProjectName")
                         ?? "linksy-frontend";
 var vercelTeamSlug = builder.Configuration.GetValue<string>("Cors:VercelTeamSlug")
-                     ?? "";   // vd: "tinhsnguyeenx281-3273s-projects"
+                     ?? "";
 
 static bool IsVercelPreviewUrl(string origin, string projectName, string teamSlug)
 {
@@ -329,20 +330,51 @@ builder.Services.AddMemoryCache();
 
 var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled", true);
 var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString");
+using var loggerFactory = LoggerFactory.Create(logging =>
+{
+    logging.AddConsole();
+    logging.AddDebug();
+});
+var startupLogger = loggerFactory.CreateLogger("Startup");
 
 if (redisEnabled && !string.IsNullOrEmpty(redisConn))
 {
-    builder.Services.AddStackExchangeRedisCache(options =>
+    try
     {
-        options.Configuration = redisConn;
-        options.InstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName");
-    });
-    Console.WriteLine("✅ Redis cache enabled");
+        var redisOptions = ConfigurationOptions.Parse(redisConn);
+        redisOptions.AbortOnConnectFail = false;
+
+        using var redis = ConnectionMultiplexer.Connect(redisOptions);
+        if (!redis.IsConnected)
+        {
+            startupLogger.LogWarning(
+                "Redis connection could not be established. Failing back to in-memory distributed cach. ConnectionString: {RedisConnection}",
+                redisConn
+            );
+            builder.Services.AddDistributedMemoryCache();
+        }
+        else
+        {
+            builder.Services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConn;
+                options.InstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName");
+            });
+            startupLogger.LogInformation("Redis cache enabled and connected");
+        }
+    }
+    catch (System.Exception ex)
+    {
+        startupLogger.LogError(ex, "Redis connection failed during starup. Failing back to in-memory distributed  cache. ConnectionString: {RedisConnection}",
+        redisConn);
+        builder.Services.AddDistributedMemoryCache();
+        throw;
+    }
 }
 else
 {
     builder.Services.AddDistributedMemoryCache();
-    Console.WriteLine("⚠️  Redis disabled — using in-memory cache");
+    startupLogger.LogWarning("Redis disabled or missing connection string. Using in-memory distributed cache ");
 }
 
 builder.Services.AddScoped<ICacheService, CacheService>();
