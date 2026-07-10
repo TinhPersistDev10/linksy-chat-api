@@ -14,31 +14,35 @@ using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Core.DTOs.Requests.Notifications;
 using linksy_backend_api.Domain.Events.Messages;
 using linksy_backend_api.Domain.Entities.Models;
+using linksy_backend_api.Domain.DTOs.Responses.MessageAttachment;
+using linksy_backend_api.Domain.Interfaces.Repositories;
 namespace linksy_backend_api.Infrastructure.Services
 {
     public class MessageService : IMessageService
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<MessageService> _logger;
-        private readonly IConnectionManager _connectionManager;
+        private readonly IFileService _fileService;
+        private readonly IChatroomAccessService _chatroomAccessService;
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly ICacheService _cache;
         private readonly INotificationService _messageNotificationService;
-        // FIX #1 (Cache stampede): dùng SemaphoreSlim per-key để tránh nhiều request
-        // cùng miss cache và gọi DB đồng thời
+
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
             _cacheLocks = new();
         public MessageService(
             IUnitOfWork unitOfWork,
             ILogger<MessageService> logger,
-            IConnectionManager connectionManager,
+            IFileService fileService,
+            IChatroomAccessService chatroomAccessService,
             IHubContext<ChatHub> hubContext,
             INotificationService messageNotificationService,
             ICacheService cache)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
-            _connectionManager = connectionManager;
+            _fileService = fileService;
+            _chatroomAccessService = chatroomAccessService;
             _hubContext = hubContext;
             _messageNotificationService = messageNotificationService;
             _cache = cache;
@@ -56,19 +60,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
             if (!isMember)
                 throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
-            // if (page == 1)
-            // {
-            //     var cacheKey = CacheKeys.Messages(chatroomId, page, pageSize);
-            //     var cached = await _cache.GetAsync<List<MessageResponse>>(cacheKey);
-            //     if (cached is not null)
-            //     {
-            //         // Cập nhật IsOwn theo userId hiện tại (không lưu trong cache)
-            //         cached.ForEach(m => m.IsOwn = m.SenderId == userId);
-            //         return cached;
-            //     }
-            // }
 
-            // Dùng MessageRepository đã tách
             var messages = await _unitOfWork.MessageRepository.GetChatroomMessagesAsync(chatroomId, page, pageSize);
 
             var messageIds = messages.Select(message => message.MessageId).ToArray();
@@ -88,13 +80,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 result.Add(response);
             }
 
-            result.Reverse(); // tin cũ ở trên, tin mới ở dưới
-            // if (page == 1)
-            //     await _cache.SetAsync(
-            //         CacheKeys.Messages(chatroomId, 1, pageSize),
-            //          result,
-            //           page == 1 ? CacheKeys.ShortTtl : CacheKeys.LongTtl);
-
+            result.Reverse();
             return result;
         }
 
@@ -137,13 +123,19 @@ namespace linksy_backend_api.Infrastructure.Services
 
         public async Task<MessageResponse> SendMessageAsync(Guid userId, SendMessageRequest messageDto)
         {
+            messageDto.MessageType = messageDto.MessageType.Trim().ToLowerInvariant();
             messageDto.MessageText = messageDto.MessageText?.Trim() ?? string.Empty;
 
-            if (string.IsNullOrWhiteSpace(messageDto.MessageText))
-                throw new ArgumentException(
-                    "Nội dung tin nhắn không được để trống."
-                );
+            var hasText = !string.IsNullOrWhiteSpace(messageDto.MessageText);
+            var hasAttachments = messageDto.Attachments is not null && messageDto.Attachments.Any();
+            var allowedMessageTypes = new[] { "text", "image", "video", "file", "audio" };
+            if (messageDto.MessageType == "text" && !hasText)
+                throw new ArgumentException("Nội dung tin nhắn không được để trống.");
 
+            if (messageDto.MessageType != "text" && !hasAttachments)
+                throw new ArgumentException("Attachment is required.");
+            if (!allowedMessageTypes.Contains(messageDto.MessageType))
+                throw new ArgumentException("MessageType không hợp lệ.");
             if (messageDto.MessageText.Length > 5000)
                 throw new ArgumentException(
                     "Tin nhắn không được vượt quá 5000 ký tự."
@@ -159,7 +151,31 @@ namespace linksy_backend_api.Infrastructure.Services
             var canSend = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, messageDto.ChatroomId, PermissionType.CanSendMessages);
             if (!canSend)
                 throw new UnauthorizedAccessException("Bạn không có quyền gửi tin nhắn trong phòng chat này.");
-
+            await _chatroomAccessService.EnsurePermissionAsync(
+                messageDto.ChatroomId,
+                userId,
+                PermissionType.CanSendMessages);
+            if (messageDto.MessageType is "image" or "video")
+            {
+                await _chatroomAccessService.EnsurePermissionAsync(
+                    messageDto.ChatroomId,
+                    userId,
+                    PermissionType.CanSendMedia);
+            }
+            else if (messageDto.MessageType == "file")
+            {
+                await _chatroomAccessService.EnsurePermissionAsync(
+                    messageDto.ChatroomId,
+                    userId,
+                    PermissionType.CanSendFiles);
+            }
+            else if (messageDto.MessageType == "audio")
+            {
+                await _chatroomAccessService.EnsurePermissionAsync(
+                    messageDto.ChatroomId,
+                    userId,
+                    PermissionType.CanSendVoice);
+            }
             if (messageDto.ParentMessageId.HasValue)
             {
                 var parent = await _unitOfWork.Messages
@@ -194,6 +210,29 @@ namespace linksy_backend_api.Infrastructure.Services
                     IsDeleted = false
                 };
                 await _unitOfWork.Messages.AddAsync(message);
+
+                if (messageDto.Attachments is not null && messageDto.Attachments.Any())
+                {
+                    foreach (var item in messageDto.Attachments)
+                    {
+                        var attachment = new MessageAttachment
+                        {
+                            AttachmentId = Guid.NewGuid(),
+                            MessageId = message.MessageId,
+                            AttachmentType = item.AttachmentType,
+                            FileName = item.FileName,
+                            CdnUrl = item.CdnUrl,
+                            FileSize = item.FileSize,
+                            MimeType = item.MimeType,
+                            ThumbnailUrl = item.ThumbnailUrl,
+                            Width = item.Width,
+                            Height = item.Height,
+                            DurationMs = item.DurationMs,
+                            UploadedAt = DateTime.UtcNow
+                        };
+                        await _unitOfWork.MessageAttachments.AddAsync(attachment);
+                    }
+                }
 
                 var recipientIds = await _unitOfWork.ChatroomMemberRepository
                     .GetActiveMemberIdsExceptAsync(messageDto.ChatroomId, userId);
@@ -254,10 +293,6 @@ namespace linksy_backend_api.Infrastructure.Services
             return response;
 
         }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // EDIT / DELETE / READ
-        // ─────────────────────────────────────────────────────────────────────
 
         public async Task<MessageResponse> EditMessageAsync(Guid userId, Guid messageId, string newText)
         {
@@ -451,7 +486,40 @@ namespace linksy_backend_api.Infrastructure.Services
                 );
             }
         }
+        public async Task<UploadAttachmentResponse> UploadAttachmentAsync(
+     Guid userId,
+     Guid chatroomId,
+     IFormFile file,
+     string attachmentType)
+        {
+            attachmentType = attachmentType.Trim().ToLowerInvariant();
 
+            await _chatroomAccessService.EnsureMemberAsync(chatroomId, userId);
+
+            if (attachmentType is "image" or "video")
+            {
+                await _chatroomAccessService.EnsurePermissionAsync(
+                    chatroomId,
+                    userId,
+                    PermissionType.CanSendMedia);
+            }
+            else if (attachmentType == "file")
+            {
+                await _chatroomAccessService.EnsurePermissionAsync(
+                    chatroomId,
+                    userId,
+                    PermissionType.CanSendFiles);
+            }
+            else
+            {
+                throw new ArgumentException("Invalid attachment type.");
+            }
+
+            return await _fileService.UploadMessageAttachmentAsync(
+                file,
+                attachmentType,
+                chatroomId);
+        }
         public async Task MarkMessageAsDeliveredAsync(Guid userId, Guid messageId)
         {
             var message = await _unitOfWork.Messages.GetByIdAsync(messageId)

@@ -1,4 +1,5 @@
 using linksy_backend_api.DTOs.MessagesDTOs;
+using linksy_backend_api.Domain.DTOs.Responses.Messages;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
@@ -14,6 +15,21 @@ namespace linksy_backend_api.Infrastructure.Mappers
             Guid? currentUserId = null)
         {
             var sender = message.Sender ?? await unitOfWork.Users.GetByIdAsync(message.SenderId ?? Guid.Empty);
+            var attachments = await unitOfWork.MessageAttachments
+                .Query()
+                .Where(attachment => attachment.MessageId == message.MessageId)
+                .OrderBy(attachment => attachment.UploadedAt)
+                .Select(attachment => new MediaAttachmentResponseDto
+                {
+                    AttachmentId = attachment.AttachmentId,
+                    FileName = attachment.FileName ?? string.Empty,
+                    FileUrl = attachment.CdnUrl ?? attachment.FilePath ?? string.Empty,
+                    FileType = attachment.AttachmentType,
+                    FileSize = attachment.FileSize ?? 0,
+                    ThumbnailUrl = attachment.ThumbnailUrl,
+                    Duration = attachment.DurationMs
+                })
+                .ToListAsync();
 
             // Parent message
             MessageResponse? parentMessageDto = null;
@@ -83,7 +99,8 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 IsOwn = currentUserId.HasValue && message.SenderId == currentUserId,
                 SentAt = message.SentAt ?? DateTime.UtcNow,
                 EditedAt = message.EditedAt,
-                DeletedAt = message.DeletedAt
+                DeletedAt = message.DeletedAt,
+                Attachments = attachments.Count > 0 ? attachments : null
             };
         }
     }

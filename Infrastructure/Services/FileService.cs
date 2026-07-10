@@ -1,11 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
 using linksy_backend_api.Core.Interfaces.Services;
-using Microsoft.AspNetCore.Http.HttpResults;
+using linksy_backend_api.Domain.DTOs.Responses.MessageAttachment;
+using Microsoft.AspNetCore.Mvc;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using Size = SixLabors.ImageSharp.Size;
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -174,5 +173,246 @@ namespace linksy_backend_api.Infrastructure.Services
 
             return output.ToArray();
         }
+
+        public Task<UploadAttachmentResponse> UploadMessageAttachmentAsync(IFormFile file, string attachmentType, Guid chatroomId)
+        {
+            if (file == null || file.Length == 0) throw new ArgumentNullException("File is required");
+            attachmentType = attachmentType.Trim().ToLowerInvariant();
+            _logger.LogInformation(
+                "Upload file. FileName={FileName}, ContentType={ContentType}, Length={Length}",
+                file.FileName,
+                file.ContentType,
+                file.Length);
+
+            ValidateAttachment(file, attachmentType);
+            return attachmentType switch
+            {
+                "image" => UploadMessageImageAsync(file, chatroomId),
+                "video" => UploadMessageVideoAsync(file, chatroomId),
+                "file" => UploadMessageRawFileAsync(file, chatroomId),
+                _ => throw new ArgumentException("Invalid attachment type"),
+            };
+        }
+
+        public async Task<UploadAttachmentResponse> UploadMessageImageAsync(IFormFile file, Guid chatroomId)
+        {
+            var publicId = $"linksy/messages/{chatroomId}/images/{Guid.NewGuid()}";
+            await using var stream = file.OpenReadStream();
+            var uploadParams = new ImageUploadParams
+            {
+                File = new FileDescription(file.Name, stream),
+                PublicId = publicId,
+                Overwrite = false,
+                Transformation = new Transformation()
+                    .Quality("auto:good")
+                    .FetchFormat("auto")
+            };
+            var result = await _cloudinary.UploadAsync(uploadParams);
+            if (result.Error != null) throw new Exception($"Cloudinary upload error: {result.Error.Message}");
+            return new UploadAttachmentResponse
+            {
+                AttachmentType = "image",
+                FileName = file.FileName,
+                CdnUrl = result.SecureUrl.ToString(),
+                FilePath = result.PublicId,
+                FileSize = result.Bytes,
+                MimeType = file.ContentType,
+                ThumbnailUrl = result.SecureUrl.ToString(),
+                Width = result.Width,
+                Height = result.Height,
+                DurationMs = null
+            };
+        }
+
+        public async Task<UploadAttachmentResponse> UploadMessageVideoAsync(
+    IFormFile file,
+    Guid chatroomId)
+        {
+            var publicId = $"linksy/messages/{chatroomId}/videos/{Guid.NewGuid()}";
+
+            await using var stream = file.OpenReadStream();
+
+            var uploadParams = new VideoUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                PublicId = publicId,
+                Overwrite = false
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+
+            if (result.Error != null)
+                throw new Exception($"Cloudinary upload error: {result.Error.Message}");
+
+            return new UploadAttachmentResponse
+            {
+                AttachmentType = "video",
+                FileName = file.FileName,
+                CdnUrl = result.SecureUrl.ToString(),
+                FilePath = result.PublicId,
+                FileSize = result.Bytes,
+                MimeType = file.ContentType,
+                ThumbnailUrl = BuildVideoThumbnailUrl(result.PublicId),
+                Width = result.Width,
+                Height = result.Height,
+                DurationMs = result.Duration > 0
+                    ? (int)(result.Duration * 1000)
+                    : null
+            };
+        }
+
+        private string BuildVideoThumbnailUrl(string publicId)
+        {
+            return _cloudinary.Api.UrlVideoUp
+                .Transform(new Transformation()
+                    .StartOffset("1")
+                    .FetchFormat("jpg"))
+                .BuildUrl(publicId + ".jpg");
+        }
+        public async Task<UploadAttachmentResponse> UploadMessageRawFileAsync(
+            IFormFile file,
+            Guid chatroomId)
+        {
+            var publicId = $"linksy/messages/{chatroomId}/files/{Guid.NewGuid()}";
+
+            await using var stream = file.OpenReadStream();
+
+            var uploadParams = new RawUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                PublicId = publicId,
+                Overwrite = false
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+
+            if (result.Error != null)
+                throw new Exception($"Cloudinary upload error: {result.Error.Message}");
+
+            return new UploadAttachmentResponse
+            {
+                AttachmentType = "file",
+                FileName = file.FileName,
+                CdnUrl = result.SecureUrl.ToString(),
+                FilePath = result.PublicId,
+                FileSize = result.Bytes,
+                MimeType = file.ContentType,
+                ThumbnailUrl = null,
+                Width = null,
+                Height = null,
+                DurationMs = null
+            };
+        }
+        private static void ValidateAttachment(IFormFile file, string attachmentType)
+        {
+            var contentType = (file.ContentType ?? string.Empty)
+                .Split(';')[0]
+                .Trim()
+                .ToLowerInvariant();
+
+            var extension = Path.GetExtension(file.FileName)
+                .ToLowerInvariant();
+
+            var imageTypes = new[]
+            {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif"
+    };
+
+            var imageExtensions = new[]
+            {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".gif"
+    };
+
+            var videoTypes = new[]
+            {
+        "video/mp4",
+        "video/webm",
+        "video/quicktime"
+    };
+
+            var videoExtensions = new[]
+            {
+        ".mp4",
+        ".webm",
+        ".mov"
+    };
+
+            var fileTypes = new[]
+            {
+        "application/pdf",
+        "text/plain",
+        "text/yaml",
+        "application/yaml",
+        "application/x-yaml",
+        "application/json",
+        "text/csv",
+        "application/xml",
+        "text/xml",
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/octet-stream",
+        "application/msword",
+        "application/vnd.ms-excel",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    };
+
+            var fileExtensions = new[]
+            {
+        ".pdf",
+        ".txt",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".xml",
+        ".csv",
+        ".zip",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx"
+    };
+
+            if (attachmentType == "image")
+            {
+                if (!imageTypes.Contains(contentType) && !imageExtensions.Contains(extension))
+                    throw new ArgumentException("Invalid image type.");
+
+                if (file.Length > 10 * 1024 * 1024)
+                    throw new ArgumentException("Image file is too large.");
+            }
+            else if (attachmentType == "video")
+            {
+                if (!videoTypes.Contains(contentType) && !videoExtensions.Contains(extension))
+                    throw new ArgumentException("Invalid video type.");
+
+                if (file.Length > 100 * 1024 * 1024)
+                    throw new ArgumentException("Video file is too large.");
+            }
+            else if (attachmentType == "file")
+            {
+                if (!fileTypes.Contains(contentType) && !fileExtensions.Contains(extension))
+                    throw new ArgumentException("Invalid file type.");
+
+                if (file.Length > 50 * 1024 * 1024)
+                    throw new ArgumentException("File is too large.");
+            }
+            else
+            {
+                throw new ArgumentException("Invalid attachment type.");
+            }
+        }
+
     }
 }

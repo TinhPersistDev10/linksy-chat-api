@@ -1,4 +1,5 @@
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.DTOs.Requests.MessageAttachment;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.MessageDTO;
 using linksy_backend_api.DTOs.MessagesDTOs;
@@ -17,15 +18,18 @@ namespace linksy_backend_api.Controllers
     public class MessageController : ControllerBase
     {
         private readonly IMessageService _messageService;
+        private readonly IFileService _fileService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<MessageController> _logger;
 
         public MessageController(
             IMessageService messageService,
+            IFileService fileService,
             IUnitOfWork unitOfWork,
             ILogger<MessageController> logger)
         {
             _messageService = messageService;
+            _fileService = fileService;
             _unitOfWork = unitOfWork;
             _logger = logger;
         }
@@ -33,11 +37,6 @@ namespace linksy_backend_api.Controllers
         private Guid CurrentUserId =>
             Guid.Parse(User.FindFirstValue("user_id")
                 ?? throw new UnauthorizedAccessException("Missing user_id claim"));
-
-        // ─────────────────────────────────────────────────────────────────────
-        // GET messages for a chatroom (paginated)
-        // GET /api/messages/{chatroomId}?page=1&pageSize=50
-        // ─────────────────────────────────────────────────────────────────────
 
         [HttpGet("{chatroomId:guid}")]
         [ProducesResponseType(typeof(ApiResponseDto), 200)]
@@ -77,11 +76,6 @@ namespace linksy_backend_api.Controllers
                 return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
             }
         }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // SEARCH messages inside a chatroom
-        // GET /api/messages/{chatroomId}/search?keyword=hello&limit=50
-        // ─────────────────────────────────────────────────────────────────────
 
         [HttpGet("{chatroomId:guid}/search")]
         [ProducesResponseType(typeof(ApiResponseDto), 200)]
@@ -140,11 +134,6 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // SEND a message
-        // POST /api/messages
-        // ─────────────────────────────────────────────────────────────────────
-
         [HttpPost]
         [ProducesResponseType(typeof(ApiResponseDto), 201)]
         [ProducesResponseType(400)]
@@ -173,11 +162,6 @@ namespace linksy_backend_api.Controllers
                 return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
             }
         }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // EDIT a message
-        // PUT /api/messages/{messageId}
-        // ─────────────────────────────────────────────────────────────────────
 
         [HttpPut("{messageId:guid}")]
         [ProducesResponseType(typeof(ApiResponseDto), 200)]
@@ -222,11 +206,6 @@ namespace linksy_backend_api.Controllers
                 return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
             }
         }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // DELETE (soft) a message
-        // DELETE /api/messages/{messageId}
-        // ─────────────────────────────────────────────────────────────────────
 
         [HttpDelete("{messageId:guid}")]
         [ProducesResponseType(typeof(ApiResponseDto), 200)]
@@ -278,11 +257,6 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // GET replies to a message
-        // GET /api/messages/{messageId}/replies
-        // ─────────────────────────────────────────────────────────────────────
-
         [HttpGet("{messageId:guid}/replies")]
         [ProducesResponseType(typeof(ApiResponseDto), 200)]
         public async Task<IActionResult> GetReplies(Guid messageId)
@@ -321,11 +295,6 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // MARK a message as read
-        // POST /api/messages/{chatroomId}/read/{messageId}
-        // ─────────────────────────────────────────────────────────────────────
-
         [HttpPost("{chatroomId:guid}/read/{messageId:guid}")]
         [ProducesResponseType(typeof(ApiResponseDto), 200)]
         public async Task<IActionResult> MarkAsRead(Guid chatroomId, Guid messageId)
@@ -347,6 +316,44 @@ namespace linksy_backend_api.Controllers
             {
                 _logger.LogError(ex, "Error marking message as read");
                 return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+        }
+
+        [HttpPost("attachments/upload")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadAttachment(
+    [FromForm] UploadAttachmentRequest request)
+        {
+            try
+            {
+                var uploaded = await _messageService.UploadAttachmentAsync(CurrentUserId, request.ChatroomId, request.File, request.AttachmentType);
+                return Ok(new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "Attachment uploaded",
+                    Data = uploaded
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading attachment.");
+                return StatusCode(500, new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Cannot upload attachment."
+                });
             }
         }
     }

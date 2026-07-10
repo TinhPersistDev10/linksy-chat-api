@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using linksy_backend_api.Domain.DTOs.Responses.MessageAttachment;
 using linksy_backend_api.DTOs.MessagesDTOs;
 using linksy_backend_api.Models;
 
@@ -16,7 +17,8 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task MarkMessageAsReadAsync(Guid userId, Guid chatroomId, Guid messageId);
         Task MarkAllMessagesAsReadAsync(Guid userId, Guid chatroomId);
         Task MarkMessageAsDeliveredAsync(Guid userId, Guid messageId);
-        Task<List<MessageResponse>> GetRepliesAsync(Guid userId,Guid messageId);
+        Task<List<MessageResponse>> GetRepliesAsync(Guid userId, Guid messageId);
         Task CreateMessageNotificationsAsync(Message message, Guid senderId);
+        Task<UploadAttachmentResponse> UploadAttachmentAsync(Guid userId, Guid chatroomId, IFormFile file, string attachmentType);
     }
 }

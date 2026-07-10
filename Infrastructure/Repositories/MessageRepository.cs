@@ -20,6 +20,7 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
                 .Where(m => m.ChatroomId == chatroomId && (m.IsDeleted == null || m.IsDeleted == false))
                 .OrderByDescending(m => m.SentAt)
                 .Skip((page - 1) * pageSize)
@@ -39,7 +40,10 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Include(m => m.Sender)
-                .Where(m => m.ParentMessageId == parentMessageId && (m.IsDeleted == null || m.IsDeleted == false))
+                .Include(m => m.MessageAttachments)
+                .Where(m => m.ParentMessageId == parentMessageId
+                    && (m.IsDeleted == null
+                    || m.IsDeleted == false))
                 .OrderBy(m => m.SentAt)
                 .ToListAsync();
         }
@@ -57,6 +61,7 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
                 .FirstOrDefaultAsync(m => m.MessageId == messageId);
         }
 
@@ -67,6 +72,7 @@ namespace linksy_backend_api.Repositories
 
             return await Query()
                         .Include(m => m.Sender)
+                        .Include(m => m.MessageAttachments)
                         .Where(m =>
                         m.ChatroomId == chatroomId
                         && (m.IsDeleted == false || m.IsDeleted == null)
