@@ -12,6 +12,7 @@ using linksy_backend_api.Models;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using linksy_backend_api.Domain.Entities.Models;
 
 namespace linksy_backend_api.Hubs
 {
@@ -662,19 +663,29 @@ namespace linksy_backend_api.Hubs
                     .UserId;
                 var connections = await _connectionManager.GetConnectionsAsync(recipientId);
 
-                if (connections.Any())
+                if (!connections.Any())
                 {
-                    await Clients.Clients(connections).SendAsync("IncomingCall", new
+                    await _callService.EndCallAsync(call.Id, callerId);
+                    await Clients.Caller.SendAsync("CallFailed", new
                     {
                         CallLogId = call.Id,
-                        CallerId = callerId,
-                        ChatroomId = call.ChatroomId,
-                        CallType = call.CallType,
-                        SdpOffer = sdpOffer
+                        Reason = "recipient_offline"
                     });
+                    return;
                 }
 
+                // Gửi CallInitiated cho Caller TRƯỚC để Caller có callLogId
+                // trước khi Callee có thể trả lời → tránh race condition CallAnswered đến trước CallInitiated
                 await Clients.Caller.SendAsync("CallInitiated", CallLogDto.FromEntity(call));
+
+                await Clients.Clients(connections).SendAsync("IncomingCall", new
+                {
+                    CallLogId = call.Id,
+                    CallerId = callerId,
+                    ChatroomId = call.ChatroomId,
+                    CallType = call.CallType,
+                    SdpOffer = sdpOffer
+                });
 
                 _logger.LogInformation(
                     "User {UserId} initiated {CallType} call {CallLogId}",
@@ -760,8 +771,9 @@ namespace linksy_backend_api.Hubs
                              .Distinct())
                 {
                     var connections = await _connectionManager.GetConnectionsAsync(recipientId);
-                    if (!connections.Any()) continue;
-
+                    if (!connections.Any())
+                    continue;
+                    
                     await Clients.Clients(connections).SendAsync("CallEnded", new
                     {
                         Call = CallLogDto.FromEntity(call),
