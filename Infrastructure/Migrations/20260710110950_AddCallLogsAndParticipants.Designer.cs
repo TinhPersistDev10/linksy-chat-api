@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using linksy_backend_api.Models;
@@ -11,9 +12,11 @@ using linksy_backend_api.Models;
 namespace linksy_backend_api.Infrastructure.Migrations
 {
     [DbContext(typeof(LinksyDbContext))]
-    partial class LinksyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260710110950_AddCallLogsAndParticipants")]
+    partial class AddCallLogsAndParticipants
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -27,58 +30,47 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
                     b.Property<DateTime?>("AnsweredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("answered_at");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("CallType")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)")
-                        .HasDefaultValue("video")
-                        .HasColumnName("call_type");
+                        .HasDefaultValue("video");
 
                     b.Property<Guid>("CallerId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("caller_id");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("ChatroomId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("chatroom_id");
+                        .HasColumnType("uuid");
 
                     b.Property<int?>("DurationSec")
-                        .HasColumnType("integer")
-                        .HasColumnName("duration_sec");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("EndedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("ended_at");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("StartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
-                        .HasDefaultValue("ringing")
-                        .HasColumnName("status");
+                        .HasDefaultValue("ringing");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CallerId", "StartedAt")
-                        .HasDatabaseName("ix_call_logs_caller_id_started_at");
+                    b.HasIndex("CallerId", "StartedAt");
 
-                    b.HasIndex("ChatroomId", "StartedAt")
-                        .HasDatabaseName("ix_call_logs_chatroom_id_started_at");
+                    b.HasIndex("ChatroomId", "StartedAt");
 
-                    b.ToTable("call_logs", (string)null);
+                    b.ToTable("CallLogs", (string)null);
                 });
 
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.CallParticipant", b =>
@@ -86,42 +78,35 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
                     b.Property<Guid>("CallLogId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("call_log_id");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("JoinedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("joined_at");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("LeftAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("left_at");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
-                        .HasDefaultValue("invited")
-                        .HasColumnName("status");
+                        .HasDefaultValue("invited");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
 
                     b.HasIndex("CallLogId", "UserId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_call_participants_call_log_id_user_id");
+                        .IsUnique();
 
-                    b.ToTable("call_participants", (string)null);
+                    b.ToTable("CallParticipants", (string)null);
                 });
 
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MemberPermission", b =>

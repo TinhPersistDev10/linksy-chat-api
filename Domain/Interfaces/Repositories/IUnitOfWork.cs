@@ -29,6 +29,11 @@ namespace linksy_backend_api.Repositories.IRepositories
         IRepository<MessageDelivery> MessageDeliveries { get; }
         #endregion
 
+        #region Call repositories
+        IRepository<CallLog> CallLogs { get; }
+        IRepository<CallParticipant> CallParticipants { get; }
+        #endregion
+
         #region Social repositories
         IRepository<Friendship> Friendships { get; }
         IRepository<FriendRequest> FriendRequests { get; }

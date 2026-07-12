@@ -41,6 +41,9 @@ namespace linksy_backend_api.Repositories
             MessageReactions = new Repository<MessageReaction>(_context);
             MessageDeliveries = new Repository<MessageDelivery>(_context);
 
+            CallLogs = new Repository<CallLog>(_context);
+            CallParticipants = new Repository<CallParticipant>(_context);
+
             Friendships = new Repository<Friendship>(_context);
             FriendRequests = new Repository<FriendRequest>(_context);
             BlockedUsers = new Repository<BlockedUser>(_context);
@@ -86,6 +89,8 @@ namespace linksy_backend_api.Repositories
         public IRepository<MessageAttachment> MessageAttachments { get; private set; } = null!;
         public IRepository<MessageReaction> MessageReactions { get; private set; } = null!;
         public IRepository<MessageDelivery> MessageDeliveries { get; private set; } = null!;
+        public IRepository<CallLog> CallLogs { get; private set; } = null!;
+        public IRepository<CallParticipant> CallParticipants { get; private set; } = null!;
         public IRepository<Friendship> Friendships { get; private set; } = null!;
         public IRepository<FriendRequest> FriendRequests { get; private set; } = null!;
         public IRepository<BlockedUser> BlockedUsers { get; private set; } = null!;

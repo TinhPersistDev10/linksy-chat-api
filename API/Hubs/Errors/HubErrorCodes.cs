@@ -17,4 +17,14 @@ public static class HubErrorCodes
     public const string MarkAsReadFailed = "MARK_AS_READ_FAILED";
     public const string MessageReplyForbidden = "MESSAGE_REPLY_FORBIDDEN";
     public const string ParentMessageDeleted = "PARENT_MESSAGE_DELETED";
+
+    //Call
+    // Thêm vào cuối HubErrorCodes.cs
+    public const string CallNotFound = "CALL_NOT_FOUND";
+    public const string CallInitFailed = "CALL_INIT_FAILED";
+    public const string CallAnswerFailed = "CALL_ANSWER_FAILED";
+    public const string CallRejectFailed = "CALL_REJECT_FAILED";
+    public const string CallEndFailed = "CALL_END_FAILED";
+    public const string IceCandidateFailed = "ICE_CANDIDATE_FAILED";
+    public const string NotInChatroom = "NOT_IN_CHATROOM";
 }

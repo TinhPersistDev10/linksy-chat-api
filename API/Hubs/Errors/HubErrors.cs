@@ -57,10 +57,33 @@ public static class HubErrors
     // ─── Read ─────────────────────────────────────────────────────────────
     public static HubException MarkAsReadFailed()
         => Create(HubErrorCodes.MarkAsReadFailed, "Không thể đánh dấu đã đọc.");
-        public static HubException MessageReplyForbidden ()
-        => Create(HubErrorCodes.MessageReplyForbidden , "Không thể reply tin nhắn.");
+    public static HubException MessageReplyForbidden()
+    => Create(HubErrorCodes.MessageReplyForbidden, "Không thể reply tin nhắn.");
 
     // ─── Read ─────────────────────────────────────────────────────────────
     public static HubException ParentMessageDeleted()
-        => Create(HubErrorCodes.ParentMessageDeleted, "Không thể đánh dấu đã đọc.");
+        => Create(HubErrorCodes.ParentMessageDeleted, "Không thể trả lời tin nhắn đã bị xóa.");
+
+
+    // ─── Call ─────────────────────────────────────────────────────────────
+    public static HubException CallNotFound()
+        => Create(HubErrorCodes.CallNotFound, "Không tìm thấy cuộc gọi.");
+
+    public static HubException CallInitFailed()
+        => Create(HubErrorCodes.CallInitFailed, "Không thể khởi tạo cuộc gọi.");
+
+    public static HubException CallAnswerFailed()
+        => Create(HubErrorCodes.CallAnswerFailed, "Không thể trả lời cuộc gọi.");
+
+    public static HubException CallRejectFailed()
+        => Create(HubErrorCodes.CallRejectFailed, "Không thể từ chối cuộc gọi.");
+
+    public static HubException CallEndFailed()
+        => Create(HubErrorCodes.CallEndFailed, "Không thể kết thúc cuộc gọi.");
+
+    public static HubException IceCandidateFailed()
+        => Create(HubErrorCodes.IceCandidateFailed, "Không thể gửi ICE candidate.");
+
+    public static HubException NotInChatroom()
+        => Create(HubErrorCodes.NotInChatroom, "Bạn không phải thành viên chatroom này.");
 }

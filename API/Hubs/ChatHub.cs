@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using linksy_backend_api.API.Hubs.Errors;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Interfaces.Repositories;
+using linksy_backend_api.Domain.Interfaces.Services;
+using linksy_backend_api.Domain.DTOs.Responses.Calls;
 using linksy_backend_api.DTOs.MessagesDTOs;
 using linksy_backend_api.Models;
 using linksy_backend_api.Services.IServices;
@@ -19,6 +21,7 @@ namespace linksy_backend_api.Hubs
         private readonly IMessageService _messageService;
         private readonly IConnectionManager _connectionManager;
         private readonly IChatroomAccessService _chatroomAccessService;
+        private readonly ICallService _callService;
         private readonly ILogger<ChatHub> _logger;
 
         public ChatHub(
@@ -26,12 +29,14 @@ namespace linksy_backend_api.Hubs
             IMessageService messageService,
             IConnectionManager connectionManager,
             IChatroomAccessService chatroomAccessService,
+            ICallService callService,
             ILogger<ChatHub> logger)
         {
             _connectionManager = connectionManager;
             _chatroomAccessService = chatroomAccessService;
             _logger = logger;
             _messageService = messageService;
+            _callService = callService;
         }
         public override async Task OnConnectedAsync()
         {
@@ -437,7 +442,7 @@ namespace linksy_backend_api.Hubs
         }
 
         // Gửi notification
-        public async Task SendNotificationToUser(Guid recipientUserId, object notification)
+        private async Task SendNotificationToUser(Guid recipientUserId, object notification)
         {
             try
             {
@@ -462,65 +467,346 @@ namespace linksy_backend_api.Hubs
             return userId;
         }
 
-        // Video/Voice call signaling
-        // public async Task CallUser(string recipientUserId, string chatroomId, string callType, object offer)
-        // {
-        //     var userId = Context.User?.FindFirst("user_id")?.Value;
-        //     var username = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+        // Video/Voice call 
 
-        //     var connections = await _connectionManager.GetConnectionsAsync(Guid.Parse(recipientUserId));
+#if false // Replaced below: legacy call signaling trusted caller-supplied identifiers.
+        public async Task InitiateCall(Guid chatroomId, string callType, string sdpOffer)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
 
-        //     if (connections.Any())
-        //     {
-        //         await Clients.Clients(connections).SendAsync("IncomingCall", new
-        //         {
-        //             CallerId = userId,
-        //             CallerName = username,
-        //             ChatroomId = chatroomId,
-        //             CallType = callType, // "video" or "voice"
-        //             Offer = offer
-        //         });
-        //     }
-        // }
+                // Kiểm tra quyền truy cập chatroom
+                await _chatroomAccessService.EnsureMemberAsync(chatroomId, userId);
 
-        // public async Task AnswerCall(string callerUserId, object answer)
-        // {
-        //     var connections = await _connectionManager.GetConnectionsAsync(Guid.Parse(callerUserId));
+                // Lưu CallLog vào DB, trả về callLogId
+                var callLogId = await _callService.InitiateCallAsync(
+                    callerId: userId,
+                    chatroomId: chatroomId,
+                    callType: callType   // "video" | "audio"
+                );
 
-        //     if (connections.Any())
-        //     {
-        //         await Clients.Clients(connections).SendAsync("CallAnswered", answer);
-        //     }
-        // }
+                // Broadcast tới các member khác trong chatroom
+                await Clients.OthersInGroup(chatroomId.ToString())
+                    .SendAsync("IncomingCall", new
+                    {
+                        CallLogId = callLogId,
+                        CallerId = userId,
+                        ChatroomId = chatroomId,
+                        CallType = callType,
+                        SdpOffer = sdpOffer
+                    });
 
-        // public async Task RejectCall(string callerUserId)
-        // {
-        //     var connections = await _connectionManager.GetConnectionsAsync(Guid.Parse(callerUserId));
+                _logger.LogInformation(
+                    "User {UserId} initiated {CallType} call in chatroom {ChatroomId}, CallLogId={CallLogId}",
+                    userId, callType, chatroomId, callLogId);
+            }
+            catch (HubException) { throw; }
+            catch (UnauthorizedAccessException)
+            {
+                throw HubErrors.NotInChatroom();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initiating call in chatroom {ChatroomId}", chatroomId);
+                throw HubErrors.CallInitFailed();
+            }
+        }
+        public async Task CallUser(string recipientUserId, string chatroomId, string callType, object offer)
+        {
+            var userId = Context.User?.FindFirst("user_id")?.Value;
+            var username = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
 
-        //     if (connections.Any())
-        //     {
-        //         await Clients.Clients(connections).SendAsync("CallRejected");
-        //     }
-        // }
+            var connections = await _connectionManager.GetConnectionsAsync(Guid.Parse(recipientUserId));
 
-        // public async Task EndCall(string otherUserId)
-        // {
-        //     var connections = await _connectionManager.GetConnectionsAsync(Guid.Parse(otherUserId));
+            if (connections.Any())
+            {
+                await Clients.Clients(connections).SendAsync("IncomingCall", new
+                {
+                    CallerId = userId,
+                    CallerName = username,
+                    ChatroomId = chatroomId,
+                    CallType = callType, // "video" or "voice"
+                    Offer = offer
+                });
+            }
+        }
 
-        //     if (connections.Any())
-        //     {
-        //         await Clients.Clients(connections).SendAsync("CallEnded");
-        //     }
-        // }
+        public async Task AnswerCall(Guid callLogId, Guid callerId, string sdpAnswer)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
 
-        // public async Task SendIceCandidate(string recipientUserId, object candidate)
-        // {
-        //     var connections = await _connectionManager.GetConnectionsAsync(Guid.Parse(recipientUserId));
+                // Cập nhật DB: status -> "answered", AnsweredAt = now
+                await _callService.AnswerCallAsync(callLogId, userId);
 
-        //     if (connections.Any())
-        //     {
-        //         await Clients.Clients(connections).SendAsync("IceCandidate", candidate);
-        //     }
-        // }
+                // Gửi Answer về đúng Caller
+                var callerConnections = await _connectionManager.GetConnectionsAsync(callerId);
+                if (callerConnections.Any())
+                {
+                    await Clients.Clients(callerConnections)
+                        .SendAsync("CallAnswered", new
+                        {
+                            CallLogId = callLogId,
+                            SdpAnswer = sdpAnswer
+                        });
+                }
+
+                _logger.LogInformation(
+                    "User {UserId} answered call {CallLogId}", userId, callLogId);
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error answering call {CallLogId}", callLogId);
+                throw HubErrors.CallAnswerFailed();
+            }
+        }
+
+        public async Task RejectCall(Guid callLogId, Guid callerId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+
+                // Cập nhật DB: status -> "rejected"
+                await _callService.RejectCallAsync(callLogId, userId);
+
+                var callerConnections = await _connectionManager.GetConnectionsAsync(callerId);
+                if (callerConnections.Any())
+                {
+                    await Clients.Clients(callerConnections)
+                        .SendAsync("CallRejected", new { CallLogId = callLogId });
+                }
+
+                _logger.LogInformation(
+                    "User {UserId} rejected call {CallLogId}", userId, callLogId);
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error rejecting call {CallLogId}", callLogId);
+                throw HubErrors.CallEndFailed();
+            }
+        }
+        public async Task EndCall(Guid callLogId, Guid chatroomId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+
+                // Cập nhật DB: EndedAt, DurationSec
+                await _callService.EndCallAsync(callLogId, userId);
+
+                // Broadcast cho cả chatroom group
+                await Clients.OthersInGroup(chatroomId.ToString())
+                    .SendAsync("CallEnded", new
+                    {
+                        CallLogId = callLogId,
+                        EndedBy = userId,
+                        Timestamp = DateTime.UtcNow
+                    });
+
+                _logger.LogInformation(
+                    "User {UserId} ended call {CallLogId}", userId, callLogId);
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error ending call {CallLogId}", callLogId);
+                throw HubErrors.CallEndFailed();
+            }
+        }
+
+
+        public async Task SendIceCandidate(string recipientUserId, object candidate)
+        {
+            try
+            {
+                var connections = await _connectionManager.GetConnectionsAsync(targetUserId);
+                if (connections.Any())
+                {
+                    await Clients.Clients(connections)
+                        .SendAsync("IceCandidate", new
+                        {
+                            CallLogId = callLogId,
+                            FromUserId = GetCurrentUserId(),
+                            CandidateJson = candidateJson
+                        });
+                }
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error sending ICE candidate to {TargetUserId}", targetUserId);
+                throw HubErrors.IceCandidateFailed();
+            }
+        }
+#endif
+
+        // WebRTC signaling. Media itself is exchanged directly by clients; the
+        // hub persists call state and forwards SDP/ICE only.
+        public async Task InitiateCall(Guid chatroomId, string callType, string sdpOffer)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sdpOffer))
+                    throw HubErrors.InvalidRequest();
+
+                var callerId = GetCurrentUserId();
+                var call = await _callService.InitiateCallAsync(callerId, chatroomId, callType);
+                var recipientId = call.Participants
+                    .Single(participant => participant.UserId != callerId)
+                    .UserId;
+                var connections = await _connectionManager.GetConnectionsAsync(recipientId);
+
+                if (connections.Any())
+                {
+                    await Clients.Clients(connections).SendAsync("IncomingCall", new
+                    {
+                        CallLogId = call.Id,
+                        CallerId = callerId,
+                        ChatroomId = call.ChatroomId,
+                        CallType = call.CallType,
+                        SdpOffer = sdpOffer
+                    });
+                }
+
+                await Clients.Caller.SendAsync("CallInitiated", CallLogDto.FromEntity(call));
+
+                _logger.LogInformation(
+                    "User {UserId} initiated {CallType} call {CallLogId}",
+                    callerId,
+                    call.CallType,
+                    call.Id);
+            }
+            catch (HubException) { throw; }
+            catch (UnauthorizedAccessException)
+            {
+                throw HubErrors.NotInChatroom();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initiating call in chatroom {ChatroomId}", chatroomId);
+                throw HubErrors.CallInitFailed();
+            }
+        }
+
+        public async Task AnswerCall(Guid callLogId, string sdpAnswer)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sdpAnswer))
+                    throw HubErrors.InvalidRequest();
+
+                var userId = GetCurrentUserId();
+                var call = await _callService.AnswerCallAsync(callLogId, userId);
+                var connections = await _connectionManager.GetConnectionsAsync(call.CallerId);
+
+                if (connections.Any())
+                {
+                    await Clients.Clients(connections).SendAsync("CallAnswered", new
+                    {
+                        Call = CallLogDto.FromEntity(call),
+                        AnsweredBy = userId,
+                        SdpAnswer = sdpAnswer
+                    });
+                }
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error answering call {CallLogId}", callLogId);
+                throw HubErrors.CallAnswerFailed();
+            }
+        }
+
+        public async Task RejectCall(Guid callLogId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var call = await _callService.RejectCallAsync(callLogId, userId);
+                var connections = await _connectionManager.GetConnectionsAsync(call.CallerId);
+
+                if (connections.Any())
+                {
+                    await Clients.Clients(connections).SendAsync("CallRejected", new
+                    {
+                        Call = CallLogDto.FromEntity(call),
+                        RejectedBy = userId
+                    });
+                }
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error rejecting call {CallLogId}", callLogId);
+                throw HubErrors.CallRejectFailed();
+            }
+        }
+
+        public async Task EndCall(Guid callLogId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var call = await _callService.EndCallAsync(callLogId, userId);
+
+                foreach (var recipientId in call.Participants
+                             .Select(participant => participant.UserId)
+                             .Distinct())
+                {
+                    var connections = await _connectionManager.GetConnectionsAsync(recipientId);
+                    if (!connections.Any()) continue;
+
+                    await Clients.Clients(connections).SendAsync("CallEnded", new
+                    {
+                        Call = CallLogDto.FromEntity(call),
+                        EndedBy = userId,
+                    });
+                }
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error ending call {CallLogId}", callLogId);
+                throw HubErrors.CallEndFailed();
+            }
+        }
+
+        public async Task SendIceCandidate(
+            Guid callLogId,
+            Guid recipientUserId,
+            string candidateJson)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(candidateJson))
+                    throw HubErrors.InvalidRequest();
+
+                var userId = GetCurrentUserId();
+                await _callService.EnsureCanSignalAsync(callLogId, userId, recipientUserId);
+                var connections = await _connectionManager.GetConnectionsAsync(recipientUserId);
+
+                if (connections.Any())
+                {
+                    await Clients.Clients(connections).SendAsync("IceCandidate", new
+                    {
+                        CallLogId = callLogId,
+                        FromUserId = userId,
+                        CandidateJson = candidateJson
+                    });
+                }
+            }
+            catch (HubException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending ICE candidate for call {CallLogId}", callLogId);
+                throw HubErrors.IceCandidateFailed();
+            }
+        }
     }
 }

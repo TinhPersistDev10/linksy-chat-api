@@ -39,6 +39,10 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<MessageAttachment> MessageAttachments { get; set; }
     public virtual DbSet<MessageReaction> MessageReactions { get; set; }
     public virtual DbSet<MessageDelivery> MessageDeliveries { get; set; }
+    // Thêm vào LinksyDbContext.cs
+    public virtual DbSet<CallLog> CallLogs { get; set; }
+    public virtual DbSet<CallParticipant> CallParticipants { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Cấu hình tất cả DateTime properties thành timestamp with time zone
@@ -76,6 +80,10 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new MessageAttachmentConfiguration());
         modelBuilder.ApplyConfiguration(new MessageReactionConfiguration());
         modelBuilder.ApplyConfiguration(new MessageDeliveryConfiguration());
+
+        // Trong OnModelCreating:
+        modelBuilder.ApplyConfiguration(new CallLogConfiguration());
+        modelBuilder.ApplyConfiguration(new CallParticipantConfiguration());
         OnModelCreatingPartial(modelBuilder);
     }
 

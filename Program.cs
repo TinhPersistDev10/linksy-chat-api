@@ -285,23 +285,6 @@ builder.Services.AddSignalR(options =>
 // ── Repository Pattern ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<UnitOfWork>();
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IChatroomRepository, ChatroomRepository>();
-builder.Services.AddScoped<IMessageRepository, MessageRepository>();
-builder.Services.AddScoped<IFriendshipRepository, FriendshipRepository>();
-builder.Services.AddScoped<IFriendRequestRepository, FriendRequestRepository>();
-builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
-builder.Services.AddScoped<IBlockedUserRepository, BlockedUserRepository>();
-builder.Services.AddScoped<IGroupInvitationRepository, GroupInvitationRepository>();
-builder.Services.AddScoped<IMemberPermissionRepository, MemberPermissionRepository>();
-builder.Services.AddScoped<IMessageReactionRepository, MessageReactionRepository>();
-builder.Services.AddScoped<IMessageDeliveryRepository, MessageDeliveryRepository>();
-builder.Services.AddScoped<IMessageAttachmentRepository, MessageAttachmentRepository>();
-builder.Services.AddScoped<IUserSettingsRepository, UserSettingsRepository>();
-builder.Services.AddScoped<INotificationSettingsRepository, NotificationSettingsRepository>();
-builder.Services.AddScoped<IPrivacySettingsRepository, PrivacySettingsRepository>();
-builder.Services.AddScoped<IUserStatusRepository, UserStatusRepository>();
-builder.Services.AddScoped<ITokenRepository, TokenRepository>();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
 // ── Services ──────────────────────────────────────────────────────────────────
@@ -322,6 +305,7 @@ builder.Services.AddScoped<IChatroomAccessService, ChatroomAccessService>();
 builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 builder.Services.AddScoped<IReactionService, ReactionService>();
 builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
+builder.Services.AddScoped<ICallService, CallService>();
 builder.Services.AddHttpClient();
 builder.Services.AddDirectoryBrowser();
 
@@ -368,7 +352,6 @@ if (redisEnabled && !string.IsNullOrEmpty(redisConn))
         startupLogger.LogError(ex, "Redis connection failed during starup. Failing back to in-memory distributed  cache. ConnectionString: {RedisConnection}",
         redisConn);
         builder.Services.AddDistributedMemoryCache();
-        throw;
     }
 }
 else
