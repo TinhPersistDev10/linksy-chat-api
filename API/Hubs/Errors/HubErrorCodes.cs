@@ -27,4 +27,8 @@ public static class HubErrorCodes
     public const string CallEndFailed = "CALL_END_FAILED";
     public const string IceCandidateFailed = "ICE_CANDIDATE_FAILED";
     public const string NotInChatroom = "NOT_IN_CHATROOM";
+    public const string CallJoinFailed = "CALL_JOIN_FAILED";
+    public const string CallLeaveFailed = "CALL_LEAVE_FAILED";
+    public const string CallSyncFailed = "CALL_SYNC_FAILED";
+    public const string IceRestartFailed = "ICE_RESTART_FAILED";
 }

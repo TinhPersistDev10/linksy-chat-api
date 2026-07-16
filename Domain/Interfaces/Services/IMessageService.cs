@@ -20,5 +20,21 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task<List<MessageResponse>> GetRepliesAsync(Guid userId, Guid messageId);
         Task CreateMessageNotificationsAsync(Message message, Guid senderId);
         Task<UploadAttachmentResponse> UploadAttachmentAsync(Guid userId, Guid chatroomId, IFormFile file, string attachmentType);
+
+        /// <summary>
+        /// Persists a call summary as a real chat message (messageType "call_log") so it survives
+        /// reload/tab switches, then broadcasts it through the normal "ReceiveMessage" event.
+        /// Bypasses the permission/attachment checks in <see cref="SendMessageAsync"/> because
+        /// this message is system-generated from a finished <c>CallLog</c>, not user input.
+        /// </summary>
+        Task<MessageResponse> CreateCallLogMessageAsync(
+            Guid chatroomId,
+            Guid callerId,
+            Guid callLogId,
+            string callType,
+            string callStatus,
+            int durationSec,
+            DateTime startedAt,
+            DateTime? endedAt);
     }
 }

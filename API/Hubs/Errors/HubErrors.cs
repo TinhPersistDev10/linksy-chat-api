@@ -86,4 +86,16 @@ public static class HubErrors
 
     public static HubException NotInChatroom()
         => Create(HubErrorCodes.NotInChatroom, "Bạn không phải thành viên chatroom này.");
+
+    public static HubException CallJoinFailed()
+        => Create(HubErrorCodes.CallJoinFailed, "Không thể tham gia cuộc gọi.");
+
+    public static HubException CallLeaveFailed()
+        => Create(HubErrorCodes.CallLeaveFailed, "Không thể rời cuộc gọi.");
+
+    public static HubException CallSyncFailed()
+        => Create(HubErrorCodes.CallSyncFailed, "Không thể đồng bộ trạng thái cuộc gọi.");
+
+    public static HubException IceRestartFailed()
+        => Create(HubErrorCodes.IceRestartFailed, "Không thể khởi động lại kết nối.");
 }

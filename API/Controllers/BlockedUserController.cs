@@ -1,13 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.DTOs.Block;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace linksy_backend_api.API.Controllers
-{
+{   [Authorize]
     [ApiController]
     [Route("api/v1/[controller]")]
     public class BlockedUserController : ControllerBase
@@ -41,9 +38,7 @@ namespace linksy_backend_api.API.Controllers
             }
         }
 
-        /// <summary>
         /// Unblock user
-        /// </summary>
         [HttpDelete("block/{blockedUserId}")]
         public async Task<IActionResult> UnblockUser(Guid blockedUserId)
         {
@@ -63,10 +58,7 @@ namespace linksy_backend_api.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
-
-        /// <summary>
         /// Lấy danh sách users đã block
-        /// </summary>
         [HttpGet("blocked")]
         public async Task<IActionResult> GetBlockedUsers()
         {
@@ -87,27 +79,5 @@ namespace linksy_backend_api.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Kiểm tra relationship với user
-        /// </summary>
-        // [HttpGet("relationship/{userId}")]
-        // public async Task<IActionResult> GetRelationship(Guid userId)
-        // {
-        //     try
-        //     {
-        //         var userIdClaim = User.FindFirst("user_id")?.Value;
-        //         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var currentUserId))
-        //         {
-        //             return Unauthorized(new { message = "Invalid user ID" });
-        //         }
-        //         var relationship = await _blockedService.GetRelationshipAsync(currentUserId, userId);
-        //         return Ok(relationship);
-        //     }
-        //     catch (Exception ex)
-        //     {
-        //         _logger.LogError(ex, "Error getting relationship");
-        //         return BadRequest(new { message = ex.Message });
-        //     }
-        // }
     }
 }

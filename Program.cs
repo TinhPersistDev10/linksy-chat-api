@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using linksy_backend_api.Core.Interfaces.Repositories;
@@ -163,10 +164,52 @@ builder.Services.AddAuthentication(options =>
             return Task.CompletedTask;
         },
 
-        OnTokenValidated = context =>
+        OnTokenValidated = async context =>
         {
+            var tokenClaims = context.SecurityToken switch
+            {
+                JwtSecurityToken jwtToken => jwtToken.Claims,
+                Microsoft.IdentityModel.JsonWebTokens.JsonWebToken jsonWebToken => jsonWebToken.Claims,
+                _ => Enumerable.Empty<Claim>()
+            };
+
+            var jti = tokenClaims.FirstOrDefault(claim =>
+                    claim.Type == JwtRegisteredClaimNames.Jti)?.Value
+                ?? context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti)
+                ?? context.Principal?.FindFirstValue(ClaimTypes.SerialNumber);
+            if (string.IsNullOrWhiteSpace(jti))
+            {
+                Console.WriteLine("[JWT] Token rejected: missing jti claim.");
+                context.Fail("JWT is missing jti claim.");
+                return;
+            }
+
+            var rawToken = context.SecurityToken switch
+            {
+                JwtSecurityToken jwtToken => jwtToken.RawData,
+                Microsoft.IdentityModel.JsonWebTokens.JsonWebToken jsonWebToken => jsonWebToken.EncodedToken,
+                _ => null
+            };
+            if (string.IsNullOrWhiteSpace(rawToken))
+            {
+                Console.WriteLine(
+                    $"[JWT] Token rejected: raw token unavailable. SecurityTokenType={context.SecurityToken?.GetType().FullName ?? "null"}");
+                context.Fail("JWT token payload is unavailable.");
+                return;
+            }
+
+            var tokenRepository = context.HttpContext.RequestServices
+                .GetRequiredService<ITokenRepository>();
+            var activeToken = await tokenRepository.GetActiveByTokenAsync(rawToken);
+
+            if (activeToken is null)
+            {
+                Console.WriteLine("[JWT] Token rejected: token is revoked or not active.");
+                context.Fail("JWT token has been revoked or is no longer active.");
+                return;
+            }
+
             Console.WriteLine("[JWT] Token validated successfully.");
-            return Task.CompletedTask;
         },
 
         OnChallenge = context =>
@@ -306,6 +349,7 @@ builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 builder.Services.AddScoped<IReactionService, ReactionService>();
 builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
 builder.Services.AddScoped<ICallService, CallService>();
+builder.Services.AddScoped<ITokenRepository, TokenRepository>();
 builder.Services.AddHttpClient();
 builder.Services.AddDirectoryBrowser();
 

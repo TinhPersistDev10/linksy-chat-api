@@ -15,7 +15,9 @@ using linksy_backend_api.Core.DTOs.Requests.Notifications;
 using linksy_backend_api.Domain.Events.Messages;
 using linksy_backend_api.Domain.Entities.Models;
 using linksy_backend_api.Domain.DTOs.Responses.MessageAttachment;
+using linksy_backend_api.Domain.DTOs.Responses.Calls;
 using linksy_backend_api.Domain.Interfaces.Repositories;
+using System.Text.Json;
 namespace linksy_backend_api.Infrastructure.Services
 {
     public class MessageService : IMessageService
@@ -197,58 +199,13 @@ namespace linksy_backend_api.Infrastructure.Services
             Message message;
             try
             {
-                message = new Message
-                {
-                    MessageId = Guid.NewGuid(),
-                    ChatroomId = messageDto.ChatroomId,
-                    SenderId = userId,
-                    MessageText = messageDto.MessageText,
-                    MessageType = messageDto.MessageType,
-                    ParentMessageId = messageDto.ParentMessageId,
-                    SentAt = DateTime.UtcNow,
-                    IsEdited = false,
-                    IsDeleted = false
-                };
-                await _unitOfWork.Messages.AddAsync(message);
-
-                if (messageDto.Attachments is not null && messageDto.Attachments.Any())
-                {
-                    foreach (var item in messageDto.Attachments)
-                    {
-                        var attachment = new MessageAttachment
-                        {
-                            AttachmentId = Guid.NewGuid(),
-                            MessageId = message.MessageId,
-                            AttachmentType = item.AttachmentType,
-                            FileName = item.FileName,
-                            CdnUrl = item.CdnUrl,
-                            FileSize = item.FileSize,
-                            MimeType = item.MimeType,
-                            ThumbnailUrl = item.ThumbnailUrl,
-                            Width = item.Width,
-                            Height = item.Height,
-                            DurationMs = item.DurationMs,
-                            UploadedAt = DateTime.UtcNow
-                        };
-                        await _unitOfWork.MessageAttachments.AddAsync(attachment);
-                    }
-                }
-
-                var recipientIds = await _unitOfWork.ChatroomMemberRepository
-                    .GetActiveMemberIdsExceptAsync(messageDto.ChatroomId, userId);
-
-                await _unitOfWork.MessageDeliveryRepository.CreateDeliveriesForMembersAsync(
-                    message.MessageId,
-                    recipientIds);
-
-                var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(messageDto.ChatroomId);
-                if (chatroom != null)
-                {
-                    chatroom.LastMessageId = message.MessageId;
-                    chatroom.LastMessageAt = message.SentAt;
-                    chatroom.LastActivityAt = message.SentAt;
-                    _unitOfWork.Chatrooms.Update(chatroom);
-                }
+                message = await PersistMessageRecordAsync(
+                    messageDto.ChatroomId,
+                    userId,
+                    messageDto.MessageType,
+                    messageDto.MessageText,
+                    messageDto.ParentMessageId,
+                    messageDto.Attachments);
 
                 await _unitOfWork.CommitTransactionAsync();
             }
@@ -278,20 +235,159 @@ namespace linksy_backend_api.Infrastructure.Services
                 .GetByMessageAsync(message.MessageId);
             ApplyDeliverySummary(response, newMessageDeliveries);
             // await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1, 50));
-            try
-            {
-                await _hubContext.Clients
-                .Group(messageDto.ChatroomId.ToString())
-                .SendAsync("ReceiveMessage", response);
-            }
-            catch (System.Exception ex)
-            {
-
-                _logger.LogError(ex, "SignalR broadcast failed for MessageId={MessageId}", message.MessageId);
-            }
+            await BroadcastReceiveMessageAsync(response);
 
             return response;
 
+        }
+
+        /// <summary>
+        /// Inserts a Message row plus its attachments/deliveries/chatroom bookkeeping.
+        /// Shared by SendMessageAsync (user-authored) and CreateCallLogMessageAsync
+        /// (system-generated) so both stay consistent without duplicating the
+        /// persistence steps. Caller owns the transaction.
+        /// </summary>
+        private async Task<Message> PersistMessageRecordAsync(
+            Guid chatroomId,
+            Guid? senderId,
+            string messageType,
+            string messageText,
+            Guid? parentMessageId,
+            IEnumerable<Domain.DTOs.Requests.SendMessageAttachmentRequest>? attachments)
+        {
+            var message = new Message
+            {
+                MessageId = Guid.NewGuid(),
+                ChatroomId = chatroomId,
+                SenderId = senderId,
+                MessageText = messageText,
+                MessageType = messageType,
+                ParentMessageId = parentMessageId,
+                SentAt = DateTime.UtcNow,
+                IsEdited = false,
+                IsDeleted = false
+            };
+            await _unitOfWork.Messages.AddAsync(message);
+
+            if (attachments is not null)
+            {
+                foreach (var item in attachments)
+                {
+                    var attachment = new MessageAttachment
+                    {
+                        AttachmentId = Guid.NewGuid(),
+                        MessageId = message.MessageId,
+                        AttachmentType = item.AttachmentType,
+                        FileName = item.FileName,
+                        CdnUrl = item.CdnUrl,
+                        FileSize = item.FileSize,
+                        MimeType = item.MimeType,
+                        ThumbnailUrl = item.ThumbnailUrl,
+                        Width = item.Width,
+                        Height = item.Height,
+                        DurationMs = item.DurationMs,
+                        UploadedAt = DateTime.UtcNow
+                    };
+                    await _unitOfWork.MessageAttachments.AddAsync(attachment);
+                }
+            }
+
+            var recipientIds = await _unitOfWork.ChatroomMemberRepository
+                .GetActiveMemberIdsExceptAsync(chatroomId, senderId ?? Guid.Empty);
+
+            await _unitOfWork.MessageDeliveryRepository.CreateDeliveriesForMembersAsync(
+                message.MessageId,
+                recipientIds);
+
+            var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId);
+            if (chatroom != null)
+            {
+                chatroom.LastMessageId = message.MessageId;
+                chatroom.LastMessageAt = message.SentAt;
+                chatroom.LastActivityAt = message.SentAt;
+                _unitOfWork.Chatrooms.Update(chatroom);
+            }
+
+            return message;
+        }
+
+        private static readonly JsonSerializerOptions CallLogPayloadJsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        public async Task<MessageResponse> CreateCallLogMessageAsync(
+            Guid chatroomId,
+            Guid callerId,
+            Guid callLogId,
+            string callType,
+            string callStatus,
+            int durationSec,
+            DateTime startedAt,
+            DateTime? endedAt)
+        {
+            var caller = await _unitOfWork.Users.GetByIdAsync(callerId);
+            var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId);
+            var payload = JsonSerializer.Serialize(
+                new CallLogMessagePayload(
+                    callLogId,
+                    callType,
+                    callStatus,
+                    Math.Max(0, durationSec),
+                    startedAt,
+                    endedAt,
+                    string.Equals(chatroom?.RoomType, "group", StringComparison.OrdinalIgnoreCase),
+                    callerId,
+                    caller?.Fullname ?? caller?.Username,
+                    chatroom?.RoomName),
+                CallLogPayloadJsonOptions);
+
+            await _unitOfWork.BeginTransactionAsync();
+            Message message;
+            try
+            {
+                message = await PersistMessageRecordAsync(
+                    chatroomId,
+                    callerId,
+                    "call_log",
+                    payload,
+                    parentMessageId: null,
+                    attachments: null);
+
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(
+                    ex,
+                    "Database transaction failed while creating call log message. ChatroomId={ChatroomId}, CallLogId={CallLogId}",
+                    chatroomId,
+                    callLogId);
+                throw;
+            }
+
+            var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, callerId);
+            var deliveries = await _unitOfWork.MessageDeliveryRepository
+                .GetByMessageAsync(message.MessageId);
+            ApplyDeliverySummary(response, deliveries);
+            await BroadcastReceiveMessageAsync(response);
+
+            return response;
+        }
+
+        private async Task BroadcastReceiveMessageAsync(MessageResponse response)
+        {
+            try
+            {
+                await _hubContext.Clients
+                    .Group(response.ChatroomId.ToString())
+                    .SendAsync("ReceiveMessage", response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SignalR broadcast failed for MessageId={MessageId}", response.MessageId);
+            }
         }
 
         public async Task<MessageResponse> EditMessageAsync(Guid userId, Guid messageId, string newText)
