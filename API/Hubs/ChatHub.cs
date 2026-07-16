@@ -732,7 +732,7 @@ namespace linksy_backend_api.Hubs
         /// scenario) without going through the initial IncomingCall/AnswerCall
         /// handshake, e.g. a participant who missed the initial ring rejoining.
         /// </summary>
-        public async Task JoinCall(Guid callLogId)
+        public async Task<CallLogDto> JoinCall(Guid callLogId)
         {
             try
             {
@@ -751,6 +751,10 @@ namespace linksy_backend_api.Hubs
                         JoinedBy = userId
                     });
                 }
+
+                // Return the fresh call state (including AnsweredAt) so the joining
+                // client can align its call timer with the shared server timestamp.
+                return dto;
             }
             catch (HubException) { throw; }
             catch (Exception ex)
