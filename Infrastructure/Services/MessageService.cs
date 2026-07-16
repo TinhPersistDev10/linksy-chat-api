@@ -235,6 +235,8 @@ namespace linksy_backend_api.Infrastructure.Services
                 .GetByMessageAsync(message.MessageId);
             ApplyDeliverySummary(response, newMessageDeliveries);
             // await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1, 50));
+            await InvalidateChatroomListCacheAsync(
+                newMessageDeliveries.Select(delivery => delivery.UserId).Append(userId));
             await BroadcastReceiveMessageAsync(response);
 
             return response;
@@ -371,6 +373,8 @@ namespace linksy_backend_api.Infrastructure.Services
             var deliveries = await _unitOfWork.MessageDeliveryRepository
                 .GetByMessageAsync(message.MessageId);
             ApplyDeliverySummary(response, deliveries);
+            await InvalidateChatroomListCacheAsync(
+                deliveries.Select(delivery => delivery.UserId).Append(callerId));
             await BroadcastReceiveMessageAsync(response);
 
             return response;
@@ -690,15 +694,24 @@ namespace linksy_backend_api.Infrastructure.Services
             await BroadcastAllMessagesReadAsync(chatroomId, userId, readAt, messageIds);
         }
 
-        private async Task InvalidateChatroomListCacheAsync(Guid userId)
+        private Task InvalidateChatroomListCacheAsync(Guid userId)
+            => InvalidateChatroomListCacheAsync(new[] { userId });
+
+        private Task InvalidateChatroomListCacheAsync(IEnumerable<Guid> userIds)
         {
-            await Task.WhenAll(
-                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, null)),
-                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, null)),
-                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, "direct")),
-                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, "group")),
-                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, "direct")),
-                _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, "group")));
+            var tasks = userIds
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .SelectMany(userId => new[]
+                {
+                    _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, null)),
+                    _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, null)),
+                    _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, "direct")),
+                    _cache.RemoveAsync(CacheKeys.ChatroomList(userId, false, "group")),
+                    _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, "direct")),
+                    _cache.RemoveAsync(CacheKeys.ChatroomList(userId, true, "group")),
+                });
+            return Task.WhenAll(tasks);
         }
 
         private static void ApplyDeliverySummary(
