@@ -10,33 +10,33 @@ using linksy_backend_api.DTOs.Auth;
 using linksy_backend_api.DTOs.UserDTO;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Models;
+using linksy_backend_api.Repositories.IRepositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace linksy_backend_api.Services
 {
     public class AuthService : IAuthService
     {
-        private readonly LinksyDbContext _context;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IEmailService _emailService;
         private readonly IJwtService _jwtService;
         private readonly ILogger<AuthService> _logger;
-
-        public AuthService(LinksyDbContext context, IEmailService emailService, IJwtService jwtService, ILogger<AuthService> logger)
+        public AuthService(IUnitOfWork unitOfWork, IEmailService emailService, IJwtService jwtService, ILogger<AuthService> logger)
         {
-            _context = context;
+            _unitOfWork = unitOfWork;
             _emailService = emailService;
             _jwtService = jwtService;
             _logger = logger;
-        }
+        }   
 
         public async Task<ApiResponseDto> ForgotPasswordAsync(ForgotPasswordRequestDto request)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
             if (user == null)
                 throw new Exception("Không tìm thấy email");
 
             // Đánh dấu các OTP cũ là expired
-            var oldOtps = await _context.EmailOtps
+            var oldOtps = await _unitOfWork.EmailOtps.Query()
                 .Where(o => o.Email == request.Email
                 && o.Purpose == "password_reset"
                 && o.IsUsed == false
@@ -61,8 +61,8 @@ namespace linksy_backend_api.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            await _context.EmailOtps.AddAsync(emailOtp);
-            await _context.SaveChangesAsync();
+            await _unitOfWork.EmailOtps.AddAsync(emailOtp);
+            await _unitOfWork.SaveChangesAsync();
 
             // Gửi email
             await _emailService.SendOtpEmailAsync(user.Email, user.Username, otp, "password_reset");
@@ -83,7 +83,8 @@ namespace linksy_backend_api.Services
                 Fullname = user.Fullname ?? string.Empty,
                 Avatar = user.Avatar ?? string.Empty,
                 Bio = user.Bio ?? string.Empty,
-                DateOfBirth = user.DateOfBirth?.ToDateTime(TimeOnly.MinValue),
+                DateOfBirth = user.DateOfBirth,
+                IsActive = user.IsActive ?? false,
                 IsEmailVerified = user.IsEmailVerified ?? false,
                 CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
                 LastLoginAt = user.LastLoginAt ?? DateTime.UtcNow
@@ -96,9 +97,11 @@ namespace linksy_backend_api.Services
                 throw new Exception("Email/Username và mật khẩu không được để trống");
 
             // Tìm user theo email hoặc username
-            var user = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == request.EmailOrUsername
-                    || u.Username == request.EmailOrUsername);
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u =>
+                u.Email == request.EmailOrUsername || u.Username == request.EmailOrUsername);
+
+            var passwordHash = user?.PasswordHash ?? BCrypt.Net.BCrypt.HashPassword("dummy_timing_protection");
+            var isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, passwordHash);
 
             if (user == null)
                 throw new Exception("Email/Username hoặc mật khẩu không đúng");
@@ -106,12 +109,12 @@ namespace linksy_backend_api.Services
             // Kiểm tra account locked
             if (user.AccountLockedUntil.HasValue && user.AccountLockedUntil > DateTime.UtcNow)
             {
-                var remainingTime = (user.AccountLockedUntil.Value - DateTime.UtcNow).Minutes;
+                var remainingTime = (int)Math.Ceiling((user.AccountLockedUntil.Value - DateTime.UtcNow).TotalMinutes);
                 throw new Exception($"Tài khoản đã bị khóa. Vui lòng thử lại sau {remainingTime} phút.");
             }
 
             // Verify password
-            if (!VerifyPassword(request.Password, user.PasswordHash))
+            if (!isPasswordValid)
             {
                 // Tăng failed login attempts
                 user.FailedLoginAttempts++;
@@ -120,20 +123,24 @@ namespace linksy_backend_api.Services
                 if (user.FailedLoginAttempts >= 5)
                 {
                     user.AccountLockedUntil = DateTime.UtcNow.AddMinutes(30);
-                    await _context.SaveChangesAsync();
+                    await _unitOfWork.SaveChangesAsync();
                     throw new Exception("Tài khoản đã bị khóa do nhập sai mật khẩu quá nhiều lần. Vui lòng thử lại sau 30 phút.");
                 }
 
-                await _context.SaveChangesAsync();
+                await _unitOfWork.SaveChangesAsync();
                 throw new Exception("Email/Username hoặc mật khẩu không đúng");
             }
 
             // Kiểm tra email verified
-            if (user.IsEmailVerified == false || user.IsEmailVerified == null)
-                throw new Exception("Vui lòng xác thực email trước khi đăng nhập");
+            if (user.IsEmailVerified != true)
+            {
+                var exception = new Exception("Vui lòng xác thực email trước khi đăng nhập");
+                exception.Data["Email"] = user.Email;
+                throw exception;
+            }
 
             // Kiểm tra active
-            if (user.IsActive == false || user.IsActive == null)
+            if (user.IsActive != true)
                 throw new Exception("Tài khoản đã bị vô hiệu hóa");
 
             // Reset failed attempts
@@ -142,6 +149,8 @@ namespace linksy_backend_api.Services
             user.LastLoginAt = DateTime.UtcNow;
             user.UpdatedAt = DateTime.UtcNow;
 
+            //Clean up token cu
+            await _unitOfWork.TokenRepository.CleanupExpiredAsync(user.UserId);
             // Tạo tokens
             var (accessToken, refreshToken, expiresAt, refreshExpiresAt) =
                 await _jwtService.GenerateTokensAsync(user.UserId);
@@ -156,8 +165,8 @@ namespace linksy_backend_api.Services
                 RefreshTokenExpiresAt = refreshExpiresAt,
                 CreatedAt = DateTime.UtcNow
             };
-            await _context.AccessTokens.AddAsync(accessTokenEntity);
-            await _context.SaveChangesAsync();
+            await _unitOfWork.AccessTokens.AddAsync(accessTokenEntity);
+            await _unitOfWork.SaveChangesAsync();
 
             return new LoginResponse
             {
@@ -178,14 +187,13 @@ namespace linksy_backend_api.Services
 
         public async Task<ApiResponseDto> LogoutAsync(string token)
         {
-            var accessToken = await _context.AccessTokens
-                .FirstOrDefaultAsync(t => t.Token == token && !t.IsRevoked);
+            var accessToken = await _unitOfWork.TokenRepository.GetActiveByTokenAsync(token);
 
             if (accessToken == null)
                 throw new Exception("Token không hợp lệ");
 
             accessToken.IsRevoked = true;
-            await _context.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
             return new ApiResponseDto
             {
@@ -196,10 +204,7 @@ namespace linksy_backend_api.Services
 
         public async Task<RefreshTokenResponse> RefreshTokenAsync(RefreshTokenRequestDto request)
         {
-            var tokenEntity = await _context.AccessTokens
-                .FirstOrDefaultAsync(t => t.RefreshToken == request.RefreshToken
-                    && !t.IsRevoked
-                    && t.RefreshTokenExpiresAt > DateTime.UtcNow);
+            var tokenEntity = await _unitOfWork.TokenRepository.GetActiveByRefreshTokenAsync(request.RefreshToken);
 
             if (tokenEntity == null)
                 throw new Exception("Refresh token không hợp lệ hoặc đã hết hạn");
@@ -221,8 +226,8 @@ namespace linksy_backend_api.Services
                 RefreshTokenExpiresAt = refreshExpiresAt,
                 CreatedAt = DateTime.UtcNow
             };
-            await _context.AccessTokens.AddAsync(newTokenEntity);
-            await _context.SaveChangesAsync();
+            await _unitOfWork.AccessTokens.AddAsync(newTokenEntity);
+            await _unitOfWork.SaveChangesAsync();
 
             return new RefreshTokenResponse
             {
@@ -237,14 +242,17 @@ namespace linksy_backend_api.Services
 
         public async Task<RegisterResponse> RegisterAsync(RegisterRequestDto request)
         {
-            if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Username))
+            if (string.IsNullOrWhiteSpace(request.Email) ||
+                string.IsNullOrWhiteSpace(request.Username) ||
+                string.IsNullOrWhiteSpace(request.Password)
+                )
                 throw new Exception("Email và Username không được để trống");
             if (request.Password.Length < 6)
                 throw new Exception("Mật khẩu phải có ít nhất 6 ký tự");
 
             // Kiểm tra email đã tồn tại
-            var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == request.Email || u.Username == request.Username);
+            var existingUser = await _unitOfWork.Users.FirstOrDefaultAsync(u =>
+                u.Email == request.Email || u.Username == request.Username);
 
             if (existingUser != null)
             {
@@ -252,15 +260,15 @@ namespace linksy_backend_api.Services
                 if (existingUser.Email == request.Email && existingUser.IsEmailVerified != true)
                 {
                     // Kiểm tra username mới có trùng user KHÁC không
-                    var usernameTaken = await _context.Users
-                        .AnyAsync(u => u.Username == request.Username
-                            && u.UserId != existingUser.UserId
-                            && u.IsEmailVerified == true);
+                    var usernameTaken = await _unitOfWork.Users.AnyAsync(u =>
+                        u.Username == request.Username &&
+                        u.UserId != existingUser.UserId &&
+                        u.IsEmailVerified == true);
 
                     if (usernameTaken)
                         throw new Exception("Username đã được sử dụng");
 
-                    var oldOtps = await _context.EmailOtps
+                    var oldOtps = await _unitOfWork.EmailOtps.Query()
                                             .Where(o => o.Email == request.Email
                                                 && o.Purpose == "email_verification"
                                                 && o.IsUsed == false)
@@ -272,8 +280,7 @@ namespace linksy_backend_api.Services
                     existingUser.Username = request.Username;
                     existingUser.PasswordHash = HashPassword(request.Password);
                     existingUser.Fullname = request.Fullname;
-                    existingUser.DateOfBirth = request.DateOfBirth.HasValue
-                        ? DateOnly.FromDateTime(request.DateOfBirth.Value) : null;
+                    existingUser.DateOfBirth = request.DateOfBirth;
                     existingUser.UpdatedAt = DateTime.UtcNow;
 
                     var newOtp = GenerateOtp();
@@ -286,8 +293,8 @@ namespace linksy_backend_api.Services
                         ExpiresAt = DateTime.UtcNow.AddMinutes(15),
                         CreatedAt = DateTime.UtcNow
                     };
-                    await _context.EmailOtps.AddAsync(newEmailOtp);
-                    await _context.SaveChangesAsync();
+                    await _unitOfWork.EmailOtps.AddAsync(newEmailOtp);
+                    await _unitOfWork.SaveChangesAsync();
                     await _emailService.SendOtpEmailAsync(existingUser.Email, existingUser.Username, newOtp, "email_verification");
                     return new RegisterResponse
                     {
@@ -313,8 +320,7 @@ namespace linksy_backend_api.Services
                 Email = request.Email,
                 PasswordHash = HashPassword(request.Password),
                 Fullname = request.Fullname,
-                DateOfBirth = request.DateOfBirth.HasValue
-                                ? DateOnly.FromDateTime(request.DateOfBirth.Value) : null,
+                DateOfBirth = request.DateOfBirth,
                 // ⭐ Set avatar mặc định ngay khi tạo user
                 Avatar = DefaultAvatarHelper.GetDefaultUserAvatar(newUserId, username: request.Username, fullname: request.Fullname),
                 IsActive = true,
@@ -323,7 +329,7 @@ namespace linksy_backend_api.Services
                 UpdatedAt = DateTime.UtcNow
             };
 
-            await _context.Users.AddAsync(user);
+            await _unitOfWork.Users.AddAsync(user);
 
             // Gán role mặc định (user)
             var userRole = new UserRole
@@ -332,7 +338,7 @@ namespace linksy_backend_api.Services
                 RoleId = 2, // role "user"
                 AssignedAt = DateTime.UtcNow
             };
-            await _context.UserRoles.AddAsync(userRole);
+            await _unitOfWork.UserRoles.AddAsync(userRole);
 
             // Tạo OTP
             var otp = GenerateOtp();
@@ -346,8 +352,8 @@ namespace linksy_backend_api.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            await _context.EmailOtps.AddAsync(emailOtp);
-            await _context.SaveChangesAsync();
+            await _unitOfWork.EmailOtps.AddAsync(emailOtp);
+            await _unitOfWork.SaveChangesAsync();
 
             // Gửi email OTP
             await _emailService.SendOtpEmailAsync(user.Email, user.Username, otp, "email_verification");
@@ -380,13 +386,13 @@ namespace linksy_backend_api.Services
 
         public async Task<ApiResponseDto> ResendOtpAsync(ResendOtpRequestDto request)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
             if (user == null)
                 throw new Exception("Không tìm thấy email");
 
             // Đánh dấu các OTP cũ là expired
-            var oldOtps = await _context.EmailOtps
-                .Where(o => o.Email == request.Email && o.Purpose == request.Purpose && (!o.IsUsed ?? false))
+            var oldOtps = await _unitOfWork.EmailOtps.Query()
+                .Where(o => o.Email == request.Email && o.Purpose == request.Purpose && o.IsUsed == false)
                 .ToListAsync();
 
             foreach (var oldOtp in oldOtps)
@@ -406,8 +412,8 @@ namespace linksy_backend_api.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            await _context.EmailOtps.AddAsync(emailOtp);
-            await _context.SaveChangesAsync();
+            await _unitOfWork.EmailOtps.AddAsync(emailOtp);
+            await _unitOfWork.SaveChangesAsync();
 
             // Gửi email
             await _emailService.SendOtpEmailAsync(user.Email, user.Username, otp, request.Purpose);
@@ -422,7 +428,7 @@ namespace linksy_backend_api.Services
         public async Task<ApiResponseDto> ResetPasswordAsync(ResetPasswordRequestDto request)
         {
             // Tìm OTP
-            var otp = await _context.EmailOtps
+            var otp = await _unitOfWork.EmailOtps.Query()
                 .Where(o => o.Email == request.Email
                     && o.OtpCode == request.OtpCode
                     && o.Purpose == "password_reset"
@@ -440,7 +446,7 @@ namespace linksy_backend_api.Services
 
             otp.Attempts++;
 
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == otp.UserId);
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.UserId == otp.UserId);
             if (user == null)
                 throw new Exception("Không tìm thấy user");
 
@@ -455,7 +461,7 @@ namespace linksy_backend_api.Services
             otp.VerifiedAt = DateTime.UtcNow;
 
             // Revoke tất cả tokens cũ
-            var oldTokens = await _context.AccessTokens
+            var oldTokens = await _unitOfWork.AccessTokens.Query()
                 .Where(t => t.UserId == user.UserId && !t.IsRevoked)
                 .ToListAsync();
 
@@ -464,7 +470,7 @@ namespace linksy_backend_api.Services
                 token.IsRevoked = true;
             }
 
-            await _context.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
             return new ApiResponseDto
             {
@@ -475,10 +481,10 @@ namespace linksy_backend_api.Services
 
         public async Task<VerifyEmailResponse> VerifyEmailAsync(VerifyEmailRequestDto request)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            await _unitOfWork.BeginTransactionAsync();
             try
             {
-                var otp = await _context.EmailOtps.Where(o => o.Email == request.Email
+                var otp = await _unitOfWork.EmailOtps.Query().Where(o => o.Email == request.Email
                     && o.OtpCode == request.OtpCode
                     && o.Purpose == "email_verification"
                     && o.IsUsed == false
@@ -497,7 +503,7 @@ namespace linksy_backend_api.Services
                 otp.IsUsed = true;
                 otp.VerifiedAt = DateTime.UtcNow;
 
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == otp.UserId);
+                var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.UserId == otp.UserId);
                 if (user == null)
                     throw new Exception("Không tìm thấy user");
 
@@ -505,8 +511,6 @@ namespace linksy_backend_api.Services
                 user.EmailVerifiedAt = DateTime.UtcNow;
                 user.UpdatedAt = DateTime.UtcNow;
 
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
                 var (accessToken, refreshToken, expiresAt, refreshExpiresAt) =
                 await _jwtService.GenerateTokensAsync(user.UserId);
 
@@ -520,9 +524,8 @@ namespace linksy_backend_api.Services
                     RefreshTokenExpiresAt = refreshExpiresAt,
                     CreatedAt = DateTime.UtcNow
                 };
-                await _context.AccessTokens.AddAsync(accessTokenEntity);
-                await _context.SaveChangesAsync();
-
+                await _unitOfWork.AccessTokens.AddAsync(accessTokenEntity);
+                await _unitOfWork.CommitTransactionAsync();
                 return new VerifyEmailResponse
                 {
                     Success = true,
@@ -537,7 +540,7 @@ namespace linksy_backend_api.Services
             catch (System.Exception ex)
             {
 
-                await transaction.RollbackAsync();
+                await _unitOfWork.RollbackTransactionAsync();
                 _logger?.LogError(ex, "Error verifying email");
                 throw;
             }
@@ -547,12 +550,12 @@ namespace linksy_backend_api.Services
         }
         public async Task<ApiResponseDto> ChangePasswordAsync(ChangePasswordRequest request)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            await _unitOfWork.BeginTransactionAsync();
 
             try
             {
                 //tìm người dùng
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == request.UserId);
+                var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.UserId == request.UserId);
 
                 if (user == null)
                     throw new Exception("Không tìm thấy người dùng");
@@ -567,7 +570,7 @@ namespace linksy_backend_api.Services
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
                 user.UpdatedAt = DateTime.UtcNow;
 
-                var activeTokens = await _context.AccessTokens
+                var activeTokens = await _unitOfWork.AccessTokens.Query()
                     .Where(t => t.UserId == user.UserId && t.ExpiresAt > DateTime.UtcNow)
                     .ToListAsync();
 
@@ -577,8 +580,7 @@ namespace linksy_backend_api.Services
                 }
 
                 _logger.LogInformation("User {UserId} changed password successfully", request.UserId);
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                await _unitOfWork.CommitTransactionAsync();
 
                 return new ApiResponseDto
                 {
@@ -589,7 +591,7 @@ namespace linksy_backend_api.Services
             catch (System.Exception ex)
             {
 
-                await transaction.RollbackAsync();
+                await _unitOfWork.RollbackTransactionAsync();
                 _logger.LogError(ex, "Error changing password for user {UserId}", request.UserId);
                 throw;
             }

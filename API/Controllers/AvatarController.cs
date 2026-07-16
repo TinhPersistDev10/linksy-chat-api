@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/[controller]")]
     [Authorize]
     public class AvatarController : ControllerBase
     {
@@ -37,7 +37,7 @@ namespace linksy_backend_api.API.Controllers
         /// </summary>
         [HttpPost("user")]
         [Consumes("multipart/form-data")]
-        public async Task<ActionResult<AvatarResponse>> UpdateUserAvatar(IFormFile avatar) // ✅ Bỏ [FromForm]
+        public async Task<ActionResult<AvatarResponse>> UpdateUserAvatar(IFormFile avatar)
         {
             try
             {
@@ -78,10 +78,9 @@ namespace linksy_backend_api.API.Controllers
             }
         }
 
-        /// <summary>
+
         /// Delete user avatar
         /// DELETE /api/avatar/user
-        /// </summary>
         [HttpDelete("user")]
         public async Task<ActionResult<AvatarResponse>> DeleteUserAvatar()
         {

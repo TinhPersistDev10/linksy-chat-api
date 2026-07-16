@@ -31,6 +31,17 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<ChatroomMember> ChatroomMembers { get; set; }
     public virtual DbSet<User> Users { get; set; }
     public virtual DbSet<UserRole> UserRoles { get; set; }
+    // ── NEW DbSets ────────────────────────────────────────────────
+    public virtual DbSet<UserSettings> UserSettings { get; set; }
+    public virtual DbSet<NotificationSettings> NotificationSettings { get; set; }
+    public virtual DbSet<PrivacySettings> PrivacySettings { get; set; }
+    public virtual DbSet<UserStatus> UserStatuses { get; set; }
+    public virtual DbSet<MessageAttachment> MessageAttachments { get; set; }
+    public virtual DbSet<MessageReaction> MessageReactions { get; set; }
+    public virtual DbSet<MessageDelivery> MessageDeliveries { get; set; }
+    // Thêm vào LinksyDbContext.cs
+    public virtual DbSet<CallLog> CallLogs { get; set; }
+    public virtual DbSet<CallParticipant> CallParticipants { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,7 +72,18 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new MemberPermissionConfiguration());
         modelBuilder.ApplyConfiguration(new UserConfiguration());
         modelBuilder.ApplyConfiguration(new UserRoleConfiguration());
+        // ── NEW configurations ────────────────────────────────────
+        modelBuilder.ApplyConfiguration(new UserSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new NotificationSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new PrivacySettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new UserStatusConfiguration());
+        modelBuilder.ApplyConfiguration(new MessageAttachmentConfiguration());
+        modelBuilder.ApplyConfiguration(new MessageReactionConfiguration());
+        modelBuilder.ApplyConfiguration(new MessageDeliveryConfiguration());
 
+        // Trong OnModelCreating:
+        modelBuilder.ApplyConfiguration(new CallLogConfiguration());
+        modelBuilder.ApplyConfiguration(new CallParticipantConfiguration());
         OnModelCreatingPartial(modelBuilder);
     }
 

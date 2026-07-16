@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Threading.Tasks;
+using linksy_backend_api.Domain.DTOs.Requests;
 
 namespace linksy_backend_api.DTOs.MessagesDTOs
 {
@@ -12,10 +9,10 @@ namespace linksy_backend_api.DTOs.MessagesDTOs
         public Guid ChatroomId { get; set; }
 
         [Required]
-        public string MessageType { get; set; } = string.Empty; // "text", "image", "file", "video", "audio"
-
+        public string MessageType { get; set; } = string.Empty;
         public string MessageText { get; set; } = string.Empty;
 
         public Guid? ParentMessageId { get; set; } // For replies
+        public List<SendMessageAttachmentRequest>? Attachments { get; set; }
     }
 }

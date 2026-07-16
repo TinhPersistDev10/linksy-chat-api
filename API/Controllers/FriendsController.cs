@@ -14,7 +14,7 @@ namespace linksy_backend_api.Controllers
 {
     [Authorize]
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/[controller]")]
     public class FriendsController : ControllerBase
     {
         private readonly IFriendService _friendService;

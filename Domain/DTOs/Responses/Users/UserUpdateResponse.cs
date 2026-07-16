@@ -11,7 +11,6 @@ namespace linksy_backend_api.Core.DTOs.Responses.Users
         public string? Fullname { get; set; }
         public string? Avatar { get; set; }
         public string? Bio { get; set; }
-        public DateTime? DateOfBirth { get; set; }
-        public bool? IsEmailVerified { get; set; }
+        public DateOnly? DateOfBirth { get; set; }
     }
 }

@@ -588,9 +588,8 @@ namespace linksy_backend_api.Infrastructure.Services
                         Data = ""
                     };
                 }
-
-                var messageCount = user.Messages.Count;
-                var friendCount = user.FriendshipUser1s.Count + user.FriendshipUser2s.Count;
+                var messageCount = await _unitOfWork.Messages.CountAsync(m => m.SenderId == userId);
+                var friendCount = await _unitOfWork.Friendships.CountAsync(f => f.User1Id == userId || f.User2Id == userId);
 
                 var userDetail = new AdminUserDetailDto
                 {
@@ -675,10 +674,7 @@ namespace linksy_backend_api.Infrastructure.Services
             }
         }
 
-        public Task<ApiResponseDto> HardDeleteUserAsync(Guid userId)
-        {
-            throw new NotImplementedException();
-        }
+
 
         public async Task<ApiResponseDto> RemoveRoleAsync(Guid userId, int roleId)
         {
@@ -900,6 +896,187 @@ namespace linksy_backend_api.Infrastructure.Services
                 };
             }
         }
-        
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Drop this method into AdminService in place of the current stub.
+        //
+        // Strategy
+        // ─────────────────────────────────────────────────────────────────────────────
+        // DeleteUserAsync already contains the full cascade logic but refuses to delete
+        // the last admin.  HardDeleteUserAsync intentionally bypasses that guard — it is
+        // meant for situations where an admin needs to be force-removed (e.g. test data
+        // cleanup, GDPR erasure).  Everything else is identical.
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        public async Task<ApiResponseDto> HardDeleteUserAsync(Guid userId)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user is null)
+                    return new ApiResponseDto { Success = false, Message = "User not found", Data = "" };
+
+                await _unitOfWork.BeginTransactionAsync();
+
+                // 1. Access tokens
+                var tokens = await _unitOfWork.AccessTokens.Query()
+                    .Where(t => t.UserId == userId).ToListAsync();
+                _unitOfWork.AccessTokens.RemoveRange(tokens);
+
+                // 2. Email OTPs
+                var otps = await _unitOfWork.EmailOtps.Query()
+                    .Where(o => o.UserId == userId).ToListAsync();
+                _unitOfWork.EmailOtps.RemoveRange(otps);
+
+                // 3. Friend requests (both directions)
+                var friendRequests = await _unitOfWork.FriendRequests.Query()
+                    .Where(fr => fr.SenderId == userId || fr.ReceiverId == userId).ToListAsync();
+                _unitOfWork.FriendRequests.RemoveRange(friendRequests);
+
+                // 4. Friendships
+                var friendships = await _unitOfWork.Friendships.Query()
+                    .Where(f => f.User1Id == userId || f.User2Id == userId).ToListAsync();
+                _unitOfWork.Friendships.RemoveRange(friendships);
+
+                // 5. Blocks (both directions)
+                var blocks = await _unitOfWork.BlockedUsers.Query()
+                    .Where(b => b.BlockerUserId == userId || b.BlockedUserId == userId).ToListAsync();
+                _unitOfWork.BlockedUsers.RemoveRange(blocks);
+
+                // 6. Notifications
+                var notifications = await _unitOfWork.Notifications.Query()
+                    .Where(n => n.UserId == userId).ToListAsync();
+                _unitOfWork.Notifications.RemoveRange(notifications);
+
+                // 7. User roles
+                var userRoles = await _unitOfWork.UserRoles.Query()
+                    .Where(ur => ur.UserId == userId).ToListAsync();
+                _unitOfWork.UserRoles.RemoveRange(userRoles);
+
+                // 8. Group invitations
+                var invitations = await _unitOfWork.GroupInvitations.Query()
+                    .Where(gi => gi.InvitedUserId == userId || gi.InvitedBy == userId).ToListAsync();
+                _unitOfWork.GroupInvitations.RemoveRange(invitations);
+
+                // 9. Chatroom memberships
+                var memberships = await _unitOfWork.ChatroomMembers.Query()
+                    .Where(cm => cm.UserId == userId).ToListAsync();
+                _unitOfWork.ChatroomMembers.RemoveRange(memberships);
+
+                // 10. Nullify last_message_id on chatrooms that reference this user's messages
+                //     (must happen BEFORE deleting the messages themselves)
+                var userMessageIds = await _unitOfWork.Messages.Query()
+                    .Where(m => m.SenderId == userId)
+                    .Select(m => m.MessageId)
+                    .ToListAsync();
+
+                if (userMessageIds.Any())
+                {
+                    var affectedChatrooms = await _unitOfWork.Chatrooms.Query()
+                        .Where(c => c.LastMessageId.HasValue &&
+                                    userMessageIds.Contains(c.LastMessageId.Value))
+                        .ToListAsync();
+
+                    foreach (var chatroom in affectedChatrooms)
+                        chatroom.LastMessageId = null;
+
+                    _unitOfWork.Chatrooms.UpdateRange(affectedChatrooms);
+                }
+
+                // 11. Handle chatrooms created by this user
+                var ownedChatrooms = await _unitOfWork.Chatrooms.Query()
+                    .Where(c => c.CreatedBy == userId).ToListAsync();
+
+                foreach (var chatroom in ownedChatrooms.Where(c => c.LastMessageId.HasValue))
+                    chatroom.LastMessageId = null;
+
+                _unitOfWork.Chatrooms.UpdateRange(ownedChatrooms);
+                await _unitOfWork.SaveChangesAsync(); // flush NULL updates first
+
+                // 12. Delete the user's messages
+                var userMessages = await _unitOfWork.Messages.Query()
+                    .Where(m => m.SenderId == userId).ToListAsync();
+                _unitOfWork.Messages.RemoveRange(userMessages);
+
+                // 13. For each owned chatroom: transfer ownership or delete
+                foreach (var chatroom in ownedChatrooms)
+                {
+                    if (chatroom.RoomType == "direct")
+                    {
+                        var chatroomMessages = await _unitOfWork.Messages.Query()
+                            .Where(m => m.ChatroomId == chatroom.ChatroomId).ToListAsync();
+                        _unitOfWork.Messages.RemoveRange(chatroomMessages);
+
+                        var chatroomMembers = await _unitOfWork.ChatroomMembers.Query()
+                            .Where(cm => cm.ChatroomId == chatroom.ChatroomId).ToListAsync();
+                        _unitOfWork.ChatroomMembers.RemoveRange(chatroomMembers);
+
+                        _unitOfWork.Chatrooms.Remove(chatroom);
+                    }
+                    else
+                    {
+                        // Try to hand off to another active admin first, then any member
+                        var newOwner = await _unitOfWork.ChatroomMembers.Query()
+                            .Where(cm => cm.ChatroomId == chatroom.ChatroomId &&
+                                         cm.UserId != userId &&
+                                         cm.LeftAt == null &&
+                                         cm.MemberRole == "admin")
+                            .FirstOrDefaultAsync()
+                            ??
+                            await _unitOfWork.ChatroomMembers.Query()
+                            .Where(cm => cm.ChatroomId == chatroom.ChatroomId &&
+                                         cm.UserId != userId &&
+                                         cm.LeftAt == null)
+                            .OrderBy(cm => cm.JoinedAt)
+                            .FirstOrDefaultAsync();
+
+                        if (newOwner is not null)
+                        {
+                            chatroom.CreatedBy = newOwner.UserId;
+                            newOwner.MemberRole = "admin";
+                            _unitOfWork.Chatrooms.Update(chatroom);
+                            _unitOfWork.ChatroomMembers.Update(newOwner);
+                        }
+                        else
+                        {
+                            // No remaining members — dissolve the room entirely
+                            var chatroomMessages = await _unitOfWork.Messages.Query()
+                                .Where(m => m.ChatroomId == chatroom.ChatroomId).ToListAsync();
+                            _unitOfWork.Messages.RemoveRange(chatroomMessages);
+
+                            var chatroomMembers = await _unitOfWork.ChatroomMembers.Query()
+                                .Where(cm => cm.ChatroomId == chatroom.ChatroomId).ToListAsync();
+                            _unitOfWork.ChatroomMembers.RemoveRange(chatroomMembers);
+
+                            _unitOfWork.Chatrooms.Remove(chatroom);
+                        }
+                    }
+                }
+
+                // 14. Finally remove the user record itself
+                _unitOfWork.Users.Remove(user);
+
+                await _unitOfWork.CommitTransactionAsync();
+
+                _logger.LogInformation("User {UserId} was hard-deleted by an administrator", userId);
+
+                return new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "User permanently and forcefully deleted",
+                    Data = true
+                };
+            }
+            catch (Exception ex)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                _logger.LogError(ex, "Error hard-deleting user {UserId}", userId);
+                return new ApiResponseDto
+                {
+                    Success = false,
+                    Message = $"Hard delete failed: {ex.Message}",
+                    Data = ""
+                };
+            }
+        }
     }
 }

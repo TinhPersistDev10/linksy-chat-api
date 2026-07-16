@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/[controller]")]
     [Authorize(Roles = "Admin")]
     public class AdminController : ControllerBase
     {
@@ -162,7 +162,8 @@ namespace linksy_backend_api.API.Controllers
                 {
                     Success = false,
                     Message = "User ID mismatch",
-                    Data = null
+                    Data = null ?? new ApiResponseDto
+                    { Success = false, Message = "Reset Password error" }
                 });
             }
 
@@ -172,7 +173,8 @@ namespace linksy_backend_api.API.Controllers
                 {
                     Success = false,
                     Message = "Password must be at least 6 characters",
-                    Data = null
+                    Data = null ?? new ApiResponseDto
+                    { Success = false, Message = "Reset Password error" }
                 });
             }
 

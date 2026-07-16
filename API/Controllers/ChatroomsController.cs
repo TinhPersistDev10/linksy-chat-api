@@ -1,21 +1,15 @@
-using System;
-using System.Collections.Generic;
-using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
-using System.Security.Claims;
-using System.Threading.Tasks;
 using linksy_backend_api.DTOs.ChatroomDTO;
-using linksy_backend_api.DTOs.MessageDTO;
-using linksy_backend_api.DTOs.MessagesDTOs;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace linksy_backend_api.Controllers
 {
     [Authorize]
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/chatrooms")]
     public class ChatroomsController : ControllerBase
     {
         private readonly IChatroomService _chatroomService;
@@ -26,82 +20,59 @@ namespace linksy_backend_api.Controllers
             _chatroomService = chatroomService;
             _logger = logger;
         }
-        #region Chatrooms
 
-       
-        /// Lấy danh sách chatrooms của user
-        /// </summary>
-        [HttpGet]
-        public async Task<IActionResult> GetChatrooms([FromQuery] bool includeArchived = false)
+        // ─────────────────────────────────────────────────────────────────────
+        // HELPERS
+        // ─────────────────────────────────────────────────────────────────────
+
+        private bool TryGetUserId(out Guid userId)
         {
+            userId = Guid.Empty;
+            var claim = User.FindFirst("user_id")?.Value
+                     ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                     ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+
+            return !string.IsNullOrEmpty(claim) && Guid.TryParse(claim, out userId);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // GET
+        // ─────────────────────────────────────────────────────────────────────
+
+        [HttpGet]
+        public async Task<IActionResult> GetChatrooms(
+     [FromQuery] bool includeArchived = false,
+     [FromQuery] string? type = null)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                // Debug logging
-                _logger.LogInformation("=== GetChatrooms called ===");
-                _logger.LogInformation($"User authenticated: {User.Identity?.IsAuthenticated}");
-                _logger.LogInformation($"User identity name: {User.Identity?.Name}");
-                
-                // Log all claims
-                var allClaims = User.Claims.Select(c => $"{c.Type}={c.Value}");
-                _logger.LogInformation($"All claims: {string.Join(", ", allClaims)}");
-                
-                // Thử nhiều cách lấy userId
-                var userIdClaim = User.FindFirst("user_id")?.Value;
-                var nameIdentifierClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                var subClaim = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-                
-                _logger.LogInformation($"user_id claim: {userIdClaim}");
-                _logger.LogInformation($"NameIdentifier claim: {nameIdentifierClaim}");
-                _logger.LogInformation($"sub claim: {subClaim}");
-                
-                // Lấy userId
-                var userIdString = userIdClaim ?? nameIdentifierClaim ?? subClaim;
-                
-                if (string.IsNullOrEmpty(userIdString))
-                {
-                    _logger.LogError("No user_id claim found in token!");
-                    return Unauthorized(new { message = "Invalid token - no user_id claim" });
-                }
-                
-                if (!Guid.TryParse(userIdString, out var userId))
-                {
-                    _logger.LogError($"Cannot parse user_id: {userIdString}");
-                    return BadRequest(new { message = "Invalid user_id format" });
-                }
-                
-                _logger.LogInformation($"Getting chatrooms for user: {userId}");
-                
-                var chatrooms = await _chatroomService.GetUserChatroomsAsync(userId);
-                
-                _logger.LogInformation($"Found {chatrooms.Count} chatrooms");
-                
+                var chatrooms = await _chatroomService.GetUserChatroomsAsync(userId, includeArchived, type);
                 return Ok(chatrooms);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting chatrooms");
-                return BadRequest(new { message = ex.Message, stackTrace = ex.StackTrace });
+                return BadRequest(new { message = ex.Message });
             }
         }
 
-        
-        /// Lấy chi tiết chatroom
-        
-        [HttpGet("{chatroomId}")]
+
+        [HttpGet("{chatroomId:guid}")]
         public async Task<IActionResult> GetChatroomDetails(Guid chatroomId)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
                 var chatroom = await _chatroomService.GetChatroomDetailsAsync(userId, chatroomId);
                 return Ok(chatroom);
             }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting chatroom details");
@@ -109,23 +80,22 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        /// Tạo chatroom direct (1-1)
-    
+        // ─────────────────────────────────────────────────────────────────────
+        // CREATE
+        // ─────────────────────────────────────────────────────────────────────
+
         [HttpPost("direct")]
         public async Task<IActionResult> CreateDirectChatroom([FromBody] CreateDirectChatRequest request)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
                 var chatroom = await _chatroomService.CreateDirectChatroomAsync(userId, request.OtherUserId);
                 return Ok(chatroom);
             }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating direct chatroom");
@@ -133,23 +103,16 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        
-        /// Tạo group chatroom
-        
         [HttpPost("group")]
         public async Task<IActionResult> CreateGroupChatroom([FromBody] CreateGroupChatroomRequest request)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
                 var chatroom = await _chatroomService.CreateGroupChatroomAsync(userId, request);
-                return Ok(chatroom);
+                return CreatedAtAction(nameof(GetChatroomDetails), new { chatroomId = chatroom.ChatroomId }, chatroom);
             }
             catch (Exception ex)
             {
@@ -158,25 +121,23 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        
-        /// Cập nhật thông tin group
-        
+        // ─────────────────────────────────────────────────────────────────────
+        // UPDATE
+        // ─────────────────────────────────────────────────────────────────────
 
-        [HttpPut("{chatroomId}")]
+        [HttpPut("{chatroomId:guid}")]
         public async Task<IActionResult> UpdateGroupInfo(Guid chatroomId, [FromBody] UpdateChatroomRequest request)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
                 var chatroom = await _chatroomService.UpdateChatroomInfoAsync(userId, chatroomId, request);
                 return Ok(chatroom);
             }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating group info");
@@ -184,121 +145,50 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        
-        /// Thêm members vào group
-        
-        [HttpPost("{chatroomId}/members")]
-        public async Task<IActionResult> AddMembers(Guid chatroomId, [FromBody] AddMembersRequest request)
+        [HttpPut("{chatroomId:guid}/avatar")]
+        public async Task<IActionResult> UpdateGroupAvatar(Guid chatroomId, IFormFile avatarFile)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
-                var result = await _chatroomService.AddMembersAsync(userId, chatroomId, request);
-                return Ok(result);
+                var result = await _chatroomService.UpdateGroupAvatarAsync(userId, chatroomId, avatarFile);
+                return result.Success ? Ok(result) : BadRequest(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error adding members");
+                _logger.LogError(ex, "Error updating group avatar");
                 return BadRequest(new { message = ex.Message });
             }
         }
 
-        
-        /// Xóa member khỏi group
-       
-        [HttpDelete("{chatroomId}/members/{memberId}")]
-        public async Task<IActionResult> RemoveMember(Guid chatroomId, Guid memberId)
+        [HttpDelete("{chatroomId:guid}/avatar")]
+        public async Task<IActionResult> DeleteGroupAvatar(Guid chatroomId)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
-                var result = await _chatroomService.RemoveMemberAsync(userId, chatroomId, memberId);
-                return Ok(result);
+                var result = await _chatroomService.DeleteGroupAvatarAsync(userId, chatroomId);
+                return result.Success ? Ok(result) : BadRequest(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error removing member");
+                _logger.LogError(ex, "Error deleting group avatar");
                 return BadRequest(new { message = ex.Message });
             }
         }
 
-        
-        /// Cập nhật role member
-        
-        [HttpPut("{chatroomId}/members/{memberId}/role")]
-        public async Task<IActionResult> UpdateMemberRole(Guid chatroomId, Guid memberId, [FromBody] UpdateMemberPermissionsRequest request)
-        {
-            try
-            {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
-                var result = await _chatroomService.UpdateMemberPermissionAsync(userId, chatroomId, memberId, request);
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating member role");
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        
-        /// Rời khỏi group
-       
-        [HttpPost("{chatroomId}/leave")]
-        public async Task<IActionResult> LeaveChatroom(Guid chatroomId)
-        {
-            try
-            {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
-                var result = await _chatroomService.LeaveChatroomAsync(userId, chatroomId);
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error leaving chatroom");
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        
-        /// Archive/Unarchive chatroom
-       
-        [HttpPut("{chatroomId}/archive")]
+        [HttpPut("{chatroomId:guid}/archive")]
         public async Task<IActionResult> ArchiveChatroom(Guid chatroomId, [FromBody] ArchiveChatroomRequest request)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
                 var result = await _chatroomService.ArchiveChatroomAsync(userId, chatroomId, request.IsArchived);
                 return Ok(result);
             }
@@ -309,112 +199,84 @@ namespace linksy_backend_api.Controllers
             }
         }
 
-        #endregion
+        // ─────────────────────────────────────────────────────────────────────
+        // MEMBERS
+        // ─────────────────────────────────────────────────────────────────────
 
-       
-        #region Group Invitations
-
-       
-        /// Gửi lời mời vào group
-        
-        [HttpPost("chatrooms/{chatroomId}/invitations")]
-        public async Task<IActionResult> SendGroupInvitation(Guid chatroomId, [FromBody] SendGroupInvitationRequest request)
+        [HttpPost("{chatroomId:guid}/members")]
+        public async Task<IActionResult> AddMembers(Guid chatroomId, [FromBody] AddMembersRequest request)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
-                var result = await _chatroomService.SendGroupInvitationAsync(userId, chatroomId, request);
+                var result = await _chatroomService.AddMembersAsync(userId, chatroomId, request);
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending group invitation");
+                _logger.LogError(ex, "Error adding members");
                 return BadRequest(new { message = ex.Message });
             }
         }
 
-      
-        /// Lấy danh sách invitations đã nhận
-        
-        [HttpGet("invitations/received")]
-        public async Task<IActionResult> GetReceivedInvitations()
+        [HttpDelete("{chatroomId:guid}/members/{memberId:guid}")]
+        public async Task<IActionResult> RemoveMember(Guid chatroomId, Guid memberId)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
-                var invitations = await _chatroomService.GetReceivedInvitationsAsync(userId);
-                return Ok(invitations);
+                var result = await _chatroomService.RemoveMemberAsync(userId, chatroomId, memberId);
+                return Ok(result);
             }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting received invitations");
+                _logger.LogError(ex, "Error removing member");
                 return BadRequest(new { message = ex.Message });
             }
         }
 
-      
-        /// Chấp nhận lời mời vào group
-        
-        [HttpPost("invitations/{invitationId}/accept")]
-        public async Task<IActionResult> AcceptGroupInvitation(Guid invitationId)
+        [HttpPut("{chatroomId:guid}/members/{memberId:guid}/permissions")]
+        public async Task<IActionResult> UpdateMemberPermissions(Guid chatroomId, Guid memberId, [FromBody] UpdateMemberPermissionsRequest request)
         {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
             try
             {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
+                var result = await _chatroomService.UpdateMemberPermissionsAsync(userId, chatroomId, memberId, request);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating member permissions");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
 
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
+        [HttpPost("{chatroomId:guid}/leave")]
+        public async Task<IActionResult> LeaveChatroom(Guid chatroomId)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
 
-                var result = await _chatroomService.AcceptGroupInvitationAsync(userId, invitationId);
+            try
+            {
+                var result = await _chatroomService.LeaveChatroomAsync(userId, chatroomId);
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error accepting group invitation");
+                _logger.LogError(ex, "Error leaving chatroom");
                 return BadRequest(new { message = ex.Message });
             }
         }
-
-      
-        /// Từ chối lời mời vào group
-        
-        [HttpPost("invitations/{invitationId}/reject")]
-        public async Task<IActionResult> RejectGroupInvitation(Guid invitationId)
-        {
-            try
-            {
-                var userIdClaim = User.FindFirst("user_id");
-                if(userIdClaim == null || string.IsNullOrEmpty(userIdClaim.Value))
-                    return Unauthorized(new { message = "User ID claim is missing." });
-
-                if(!Guid.TryParse(userIdClaim.Value, out var userId))
-                    return BadRequest(new { message = "Invalid User ID format." });
-
-                var result = await _chatroomService.RejectGroupInvitationAsync(userId, invitationId);
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error rejecting group invitation");
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        #endregion
     }
-
 }

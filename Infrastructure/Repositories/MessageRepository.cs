@@ -20,7 +20,8 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Include(m => m.Sender)
-                .Where(m => m.ChatroomId == chatroomId && !m.IsDeleted.GetValueOrDefault())
+                .Include(m => m.MessageAttachments)
+                .Where(m => m.ChatroomId == chatroomId && (m.IsDeleted == null || m.IsDeleted == false))
                 .OrderByDescending(m => m.SentAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -39,30 +40,47 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Include(m => m.Sender)
-                .Where(m => m.ParentMessageId == parentMessageId && !m.IsDeleted.GetValueOrDefault())
+                .Include(m => m.MessageAttachments)
+                .Where(m => m.ParentMessageId == parentMessageId
+                    && (m.IsDeleted == null
+                    || m.IsDeleted == false))
                 .OrderBy(m => m.SentAt)
                 .ToListAsync();
         }
 
         public async Task<int> GetUnreadCountAsync(Guid chatroomId, Guid userId, DateTime lastReadAt)
         {
-            return await CountAsync(m => 
-                m.ChatroomId == chatroomId && 
+            return await CountAsync(m =>
+                m.ChatroomId == chatroomId &&
                 m.SenderId != userId &&
                 m.SentAt > lastReadAt &&
-                !m.IsDeleted.GetValueOrDefault());
+                (m.IsDeleted == null || m.IsDeleted == false));
         }
 
         public async Task<Message?> GetWithSenderAsync(Guid messageId)
         {
             return await Query()
                 .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
                 .FirstOrDefaultAsync(m => m.MessageId == messageId);
         }
 
-        public Task<List<Message>> SearchMessageAsync(Guid chatroomId, string keyword, int limit = 50)
+        public async Task<List<Message>> SearchMessageAsync(Guid chatroomId, string keyword, int limit = 50)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(keyword)) return new List<Message>();
+            var normalized = keyword.Trim().ToLower();
+
+            return await Query()
+                        .Include(m => m.Sender)
+                        .Include(m => m.MessageAttachments)
+                        .Where(m =>
+                        m.ChatroomId == chatroomId
+                        && (m.IsDeleted == false || m.IsDeleted == null)
+                        && m.MessageText != null
+                        && m.MessageText.ToLower().Contains(normalized))
+                        .OrderByDescending(m => m.SentAt)
+                        .Take(limit)
+                        .ToListAsync();
         }
     }
 }

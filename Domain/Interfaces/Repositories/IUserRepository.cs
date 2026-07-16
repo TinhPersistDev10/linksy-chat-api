@@ -13,10 +13,12 @@ namespace linksy_backend_api.Repositories.IRepositories
         Task<User?> GetByUsernameAsync(string username);
         Task<User?> GetByEmailOrUsernameAsync(string emailOrUsername);
         Task<User?> GetWithRolesAsync(Guid userId);
-        Task<bool> IsEmailExistsAsync(string email);
-        Task<bool> IsUsernameExistsAsync(string username);
+        Task<bool> IsEmailExistsAsync(string email, Guid? excludeUserId = null); // ✅ 1 method duy nhất
+        Task<bool> IsUsernameExistsAsync(string username, Guid? excludeUserId = null);
         Task<List<User>> GetOnlineUsersAsync(List<Guid> userIds);
-        Task<List<User>> SearchUsersAsync(string searchTerm, int limit = 20);
-        
+        Task<List<User>> SearchUsersAsync(string searchTerm, Guid excludedUserId, int limit = 20);
+        Task<List<Guid>> GetExistingUserIdsAsync(List<Guid> userIds);
+        Task<User?> GetByIdAsNoTrackingAsync(Guid userId);
+
     }
 }

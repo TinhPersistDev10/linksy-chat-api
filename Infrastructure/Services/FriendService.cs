@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.Requests.Friends;
 using linksy_backend_api.Core.DTOs.Responses.Friends;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.DTOs.Responses.Users;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.Block;
 using linksy_backend_api.DTOs.FriendDTO;
@@ -147,7 +148,7 @@ namespace linksy_backend_api.Services
                         {
                             UserId = friend.UserId,
                             Username = friend.Username,
-                            Fullname = friend.Fullname,
+                            Fullname = friend.Fullname ?? "Lỗi hiển thị",
                             Avatar = DefaultAvatarHelper.GetAvatarOrDefault(friend.Avatar, friend.UserId),
                             FriendsSince = friendship.CreatedAt ?? DateTime.UtcNow
                         });
@@ -180,7 +181,6 @@ namespace linksy_backend_api.Services
                     SenderId = request.SenderId,
                     SenderUsername = sender?.Username,
                     SenderFullname = sender?.Fullname,
-                    // ⭐ Sử dụng default avatar
                     SenderAvatar = DefaultAvatarHelper.GetAvatarOrDefault(sender?.Avatar, sender?.UserId),
                     ReceiverId = request.ReceiverId,
                     ReceiverUsername = receiver?.Username,
@@ -262,8 +262,6 @@ namespace linksy_backend_api.Services
 
             return new RelationshipDto { Status = "none" };
         }
-
-
         public async Task<List<FriendRequestResponse>> GetSentFriendRequestsAsync(Guid userId)
         {
             var requests = await _unitOfWork.FriendRequests.Query()
@@ -440,8 +438,10 @@ namespace linksy_backend_api.Services
                     .GetRequestAsync(senderId, request.ReceiverId);
 
             // Kiểm tra receiver đã gửi request cho sender chưa
-            var reverseRequest = await _unitOfWork.FriendRequestRepository.GetRequestAsync(request.ReceiverId, senderId);
-            if (reverseRequest != null)
+            var reverseRequest = await _unitOfWork.FriendRequestRepository
+    .GetRequestAsync(request.ReceiverId, senderId);
+
+            if (reverseRequest != null && reverseRequest.Status == "pending")
             {
                 throw new InvalidOperationException("Người dùng này đã gửi lời mời kết bạn cho bạn");
             }
@@ -456,14 +456,14 @@ namespace linksy_backend_api.Services
                 if (existingRequest != null)
                 {
                     if (existingRequest.Status == "pending")
-                        throw new InvalidOperationException(
-                            "Đã gửi lời mời kết bạn");
+                        throw new InvalidOperationException("Đã gửi lời mời kết bạn");
 
-                    // Gửi lại
                     existingRequest.Status = "pending";
                     existingRequest.Message = request.Message;
                     existingRequest.SentAt = DateTime.UtcNow;
                     existingRequest.RespondedAt = null;
+
+                    _unitOfWork.FriendRequests.Update(existingRequest);
 
                     friendRequest = existingRequest;
                 }

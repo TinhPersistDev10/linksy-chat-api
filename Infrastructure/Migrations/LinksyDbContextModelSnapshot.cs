@@ -22,6 +22,539 @@ namespace linksy_backend_api.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.CallLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("answered_at");
+
+                    b.Property<string>("CallType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("video")
+                        .HasColumnName("call_type");
+
+                    b.Property<Guid>("CallerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caller_id");
+
+                    b.Property<Guid>("ChatroomId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("chatroom_id");
+
+                    b.Property<int?>("DurationSec")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_sec");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("ringing")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CallerId", "StartedAt")
+                        .HasDatabaseName("ix_call_logs_caller_id_started_at");
+
+                    b.HasIndex("ChatroomId", "StartedAt")
+                        .HasDatabaseName("ix_call_logs_chatroom_id_started_at");
+
+                    b.ToTable("call_logs", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.CallParticipant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("CallLogId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("call_log_id");
+
+                    b.Property<DateTime?>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<DateTime?>("LeftAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("left_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("invited")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("CallLogId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_call_participants_call_log_id_user_id");
+
+                    b.ToTable("call_participants", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MemberPermission", b =>
+                {
+                    b.Property<Guid>("PermissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("permission_id");
+
+                    b.Property<bool>("CanDeleteMessages")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("can_delete_messages");
+
+                    b.Property<bool>("CanEditGroupInfo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("can_edit_group_info");
+
+                    b.Property<bool>("CanInviteMembers")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("can_invite_members");
+
+                    b.Property<bool>("CanManageCalls")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("can_manage_calls");
+
+                    b.Property<bool>("CanPinMessages")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("can_pin_messages");
+
+                    b.Property<bool>("CanRemoveMembers")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("can_remove_members");
+
+                    b.Property<bool>("CanSendFiles")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("can_send_files");
+
+                    b.Property<bool>("CanSendMedia")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("can_send_media");
+
+                    b.Property<bool>("CanSendMessages")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("can_send_messages");
+
+                    b.Property<bool>("CanSendVoice")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("can_send_voice");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("member_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("PermissionId")
+                        .HasName("permission_members_pkey");
+
+                    b.HasIndex(new[] { "MemberId" }, "permission_members_member_id_idx")
+                        .IsUnique();
+
+                    b.ToTable("member_permissions", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageAttachment", b =>
+                {
+                    b.Property<Guid>("AttachmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attachment_id");
+
+                    b.Property<string>("AttachmentType")
+                        .IsRequired()
+                        .HasColumnType("character varying")
+                        .HasColumnName("attachment_type");
+
+                    b.Property<string>("CdnUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("cdn_url");
+
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_ms");
+
+                    b.Property<string>("FileName")
+                        .HasColumnType("character varying")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("FilePath")
+                        .HasColumnType("text")
+                        .HasColumnName("file_path");
+
+                    b.Property<long?>("FileSize")
+                        .HasColumnType("bigint")
+                        .HasColumnName("file_size");
+
+                    b.Property<int?>("Height")
+                        .HasColumnType("integer")
+                        .HasColumnName("height");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<string>("MimeType")
+                        .HasColumnType("character varying")
+                        .HasColumnName("mime_type");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("thumbnail_url");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("uploaded_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int?>("Width")
+                        .HasColumnType("integer")
+                        .HasColumnName("width");
+
+                    b.HasKey("AttachmentId")
+                        .HasName("message_attachments_pkey");
+
+                    b.HasIndex(new[] { "MessageId", "AttachmentType" }, "message_attachments_message_id_attachment_type_idx");
+
+                    b.HasIndex(new[] { "MessageId" }, "message_attachments_message_id_idx");
+
+                    b.ToTable("message_attachments", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageDelivery", b =>
+                {
+                    b.Property<Guid>("DeliveryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("delivery_id");
+
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("delivered_at");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("status")
+                        .HasDefaultValueSql("'sent'::character varying");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("DeliveryId")
+                        .HasName("message_deliveries_pkey");
+
+                    b.HasIndex(new[] { "MessageId", "Status" }, "message_deliveries_message_id_status_idx");
+
+                    b.HasIndex(new[] { "MessageId", "UserId" }, "message_deliveries_message_id_user_id_key")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "UserId", "Status", "ReadAt" }, "message_deliveries_user_id_status_read_at_idx");
+
+                    b.ToTable("message_deliveries", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
+                {
+                    b.Property<Guid>("ReactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reaction_id");
+
+                    b.Property<string>("EmojiCode")
+                        .IsRequired()
+                        .HasColumnType("character varying")
+                        .HasColumnName("emoji_code");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<DateTime>("ReactedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reacted_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("ReactionId")
+                        .HasName("message_reactions_pkey");
+
+                    b.HasIndex(new[] { "MessageId", "EmojiCode" }, "message_reactions_message_id_emoji_code_idx");
+
+                    b.HasIndex(new[] { "MessageId", "UserId", "EmojiCode" }, "message_reactions_message_id_user_id_emoji_code_key")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "UserId", "ReactedAt" }, "message_reactions_user_id_reacted_at_idx");
+
+                    b.ToTable("message_reactions", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.NotificationSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("EmailNotifications")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("email_notifications");
+
+                    b.Property<bool>("MessagePreviewEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("message_preview_enabled");
+
+                    b.Property<bool>("NotificationSoundEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("notification_sound_enabled");
+
+                    b.Property<bool>("NotificationsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("notifications_enabled");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("notification_settings_pkey");
+
+                    b.HasIndex(new[] { "UserId" }, "notification_settings_user_id_key")
+                        .IsUnique();
+
+                    b.ToTable("notification_settings", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.PrivacySettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("LastSeenEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("last_seen_enabled");
+
+                    b.Property<string>("ProfilePhotoVisibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("profile_photo_visibility")
+                        .HasDefaultValueSql("'everyone'::character varying");
+
+                    b.Property<bool>("ReadReceiptsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("read_receipts_enabled");
+
+                    b.Property<string>("StatusVisibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("status_visibility")
+                        .HasDefaultValueSql("'everyone'::character varying");
+
+                    b.Property<bool>("TypingIndicatorsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("typing_indicators_enabled");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("WhoCanAddToGroups")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("who_can_add_to_groups")
+                        .HasDefaultValueSql("'everyone'::character varying");
+
+                    b.HasKey("Id")
+                        .HasName("privacy_settings_pkey");
+
+                    b.HasIndex(new[] { "UserId" }, "privacy_settings_user_id_key")
+                        .IsUnique();
+
+                    b.ToTable("privacy_settings", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserSettings", b =>
+                {
+                    b.Property<Guid>("SettingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("setting_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("language")
+                        .HasDefaultValueSql("'vi'::character varying");
+
+                    b.Property<string>("Theme")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("theme")
+                        .HasDefaultValueSql("'system'::character varying");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("timezone")
+                        .HasDefaultValueSql("'Asia/Ho_Chi_Minh'::character varying");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("SettingId")
+                        .HasName("user_settings_pkey");
+
+                    b.HasIndex(new[] { "UserId" }, "user_settings_user_id_key")
+                        .IsUnique();
+
+                    b.ToTable("user_settings", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserStatus", b =>
+                {
+                    b.Property<Guid>("StatusId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("status_id");
+
+                    b.Property<string>("CustomStatus")
+                        .HasColumnType("character varying")
+                        .HasColumnName("custom_status");
+
+                    b.Property<DateTime?>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("StatusType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("status_type")
+                        .HasDefaultValueSql("'offline'::character varying");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("StatusId")
+                        .HasName("user_status_pkey");
+
+                    b.HasIndex(new[] { "UserId" }, "user_status_user_id_key")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "UserId", "StatusType" }, "user_status_user_id_status_type_idx");
+
+                    b.ToTable("user_status", (string)null);
+                });
+
             modelBuilder.Entity("linksy_backend_api.Models.AccessToken", b =>
                 {
                     b.Property<int>("TokenId")
@@ -197,6 +730,98 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.HasIndex(new[] { "RoomType", "IsActive", "LastActivityAt" }, "chatrooms_room_type_is_active_last_activity_at_idx");
 
                     b.ToTable("chatrooms", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Models.ChatroomMember", b =>
+                {
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("member_id");
+
+                    b.Property<Guid?>("AddedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("added_by");
+
+                    b.Property<Guid>("ChatroomId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("chatroom_id");
+
+                    b.Property<bool?>("IsMuted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_muted");
+
+                    b.Property<DateTime?>("JoinedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("LastReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_read_at");
+
+                    b.Property<DateTime?>("LeftAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("left_at");
+
+                    b.Property<string>("MemberRole")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("member_role")
+                        .HasDefaultValueSql("'member'::character varying");
+
+                    b.Property<int?>("MessageCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("message_count");
+
+                    b.Property<DateTime?>("MutedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("muted_until");
+
+                    b.Property<string>("Nickname")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying")
+                        .HasColumnName("nickname");
+
+                    b.Property<string>("NotificationPreference")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying")
+                        .HasColumnName("notification_preference")
+                        .HasDefaultValueSql("'all::character varying");
+
+                    b.Property<Guid?>("RemovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("removed_by");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("MemberId")
+                        .HasName("chatroom_members_pkey");
+
+                    b.HasIndex("AddedBy");
+
+                    b.HasIndex("RemovedBy");
+
+                    b.HasIndex(new[] { "ChatroomId", "LastReadAt" }, "chatroom_members_chatroom_id_last_read_at_idx");
+
+                    b.HasIndex(new[] { "ChatroomId", "MemberRole" }, "chatroom_members_chatroom_id_member_role_idx");
+
+                    b.HasIndex(new[] { "ChatroomId", "UserId" }, "chatroom_members_chatroom_id_user_id_idx")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "UserId", "ChatroomId" }, "chatroom_members_user_id_chatroom_id_idx");
+
+                    b.HasIndex(new[] { "UserId", "LeftAt" }, "chatroom_members_user_id_left_at_idx");
+
+                    b.ToTable("chatroom_members", (string)null);
                 });
 
             modelBuilder.Entity("linksy_backend_api.Models.EmailOtp", b =>
@@ -480,12 +1105,6 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("parent_message_id");
 
-                    b.Property<int?>("ReplyCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("reply_count");
-
                     b.Property<Guid?>("SenderId")
                         .HasColumnType("uuid")
                         .HasColumnName("sender_id");
@@ -632,82 +1251,6 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.ToTable("roles", (string)null);
                 });
 
-            modelBuilder.Entity("linksy_backend_api.Models.ChatroomMember", b =>
-                {
-                    b.Property<Guid>("MemberId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("member_id");
-
-                    b.Property<bool?>("CanDeleteMessages")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("can_delete_messages");
-
-                    b.Property<bool?>("CanEditGroupInfo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("can_edit_group_info");
-
-                    b.Property<bool?>("CanInviteMembers")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("can_invite_members");
-
-                    b.Property<bool?>("CanRemoveMembers")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("can_remove_members");
-
-                    b.Property<bool?>("CanSendMessage")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("can_send_message");
-
-                    b.Property<Guid>("ChatroomId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("chatroom_id");
-
-                    b.Property<DateTime?>("JoinedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("joined_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<DateTime?>("LeftAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("left_at");
-
-                    b.Property<string>("MemberRole")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("character varying")
-                        .HasColumnName("member_role")
-                        .HasDefaultValueSql("'member'::character varying");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("MemberId")
-                        .HasName("role_members_pkey");
-
-                    b.HasIndex(new[] { "ChatroomId", "MemberRole" }, "role_members_chatroom_id_member_role_idx");
-
-                    b.HasIndex(new[] { "ChatroomId", "UserId" }, "role_members_chatroom_id_user_id_idx")
-                        .IsUnique();
-
-                    b.HasIndex(new[] { "UserId", "ChatroomId" }, "role_members_user_id_chatroom_id_idx");
-
-                    b.HasIndex(new[] { "UserId", "LeftAt" }, "role_members_user_id_left_at_idx");
-
-                    b.ToTable("role_members", (string)null);
-                });
-
             modelBuilder.Entity("linksy_backend_api.Models.User", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -846,6 +1389,158 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.ToTable("user_roles", (string)null);
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.CallLog", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.User", "Caller")
+                        .WithMany()
+                        .HasForeignKey("CallerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("linksy_backend_api.Models.Chatroom", "Chatroom")
+                        .WithMany()
+                        .HasForeignKey("ChatroomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Caller");
+
+                    b.Navigation("Chatroom");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.CallParticipant", b =>
+                {
+                    b.HasOne("linksy_backend_api.Domain.Entities.Models.CallLog", "CallLog")
+                        .WithMany("Participants")
+                        .HasForeignKey("CallLogId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CallLog");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MemberPermission", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.ChatroomMember", "Member")
+                        .WithOne("MemberPermission")
+                        .HasForeignKey("linksy_backend_api.Domain.Entities.Models.MemberPermission", "MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("permission_members_member_id_fkey");
+
+                    b.Navigation("Member");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageAttachment", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.Message", "Message")
+                        .WithMany("MessageAttachments")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_attachments_message_id_fkey");
+
+                    b.Navigation("Message");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageDelivery", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.Message", "Message")
+                        .WithMany("MessageDeliveries")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_deliveries_message_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithMany("MessageDeliveries")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_deliveries_user_id_fkey");
+
+                    b.Navigation("Message");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.Message", "Message")
+                        .WithMany("MessageReactions")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_reactions_message_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithMany("MessageReactions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_reactions_user_id_fkey");
+
+                    b.Navigation("Message");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.NotificationSettings", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithOne("NotificationSettings")
+                        .HasForeignKey("linksy_backend_api.Domain.Entities.Models.NotificationSettings", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("notification_settings_user_id_fkey");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.PrivacySettings", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithOne("PrivacySettings")
+                        .HasForeignKey("linksy_backend_api.Domain.Entities.Models.PrivacySettings", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("privacy_settings_user_id_fkey");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserSettings", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithOne("UserSettings")
+                        .HasForeignKey("linksy_backend_api.Domain.Entities.Models.UserSettings", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("user_settings_user_id_fkey");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserStatus", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithOne("UserStatus")
+                        .HasForeignKey("linksy_backend_api.Domain.Entities.Models.UserStatus", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("user_status_user_id_fkey");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("linksy_backend_api.Models.AccessToken", b =>
                 {
                     b.HasOne("linksy_backend_api.Models.User", "User")
@@ -893,6 +1588,43 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("CreatedByNavigation");
 
                     b.Navigation("LastMessage");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Models.ChatroomMember", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.User", "AddedByNavigation")
+                        .WithMany()
+                        .HasForeignKey("AddedBy")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("chatroom_members_added_by_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.Chatroom", "Chatroom")
+                        .WithMany("ChatroomMembers")
+                        .HasForeignKey("ChatroomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("chatroom_members_chatroom_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "RemovedByNavigation")
+                        .WithMany()
+                        .HasForeignKey("RemovedBy")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("chatroom_members_removed_by_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithMany("ChatroomMembers")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("chatroom_members_user_id_fkey");
+
+                    b.Navigation("AddedByNavigation");
+
+                    b.Navigation("Chatroom");
+
+                    b.Navigation("RemovedByNavigation");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("linksy_backend_api.Models.EmailOtp", b =>
@@ -1010,25 +1742,6 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("linksy_backend_api.Models.ChatroomMember", b =>
-                {
-                    b.HasOne("linksy_backend_api.Models.Chatroom", "Chatroom")
-                        .WithMany("ChatroomMembers")
-                        .HasForeignKey("ChatroomId")
-                        .IsRequired()
-                        .HasConstraintName("role_members_chatroom_id_fkey");
-
-                    b.HasOne("linksy_backend_api.Models.User", "User")
-                        .WithMany("ChatroomMembers")
-                        .HasForeignKey("UserId")
-                        .IsRequired()
-                        .HasConstraintName("role_members_user_id_fkey");
-
-                    b.Navigation("Chatroom");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("linksy_backend_api.Models.UserRole", b =>
                 {
                     b.HasOne("linksy_backend_api.Models.Role", "Role")
@@ -1048,13 +1761,23 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.CallLog", b =>
+                {
+                    b.Navigation("Participants");
+                });
+
             modelBuilder.Entity("linksy_backend_api.Models.Chatroom", b =>
                 {
+                    b.Navigation("ChatroomMembers");
+
                     b.Navigation("GroupInvitations");
 
                     b.Navigation("Messages");
+                });
 
-                    b.Navigation("ChatroomMembers");
+            modelBuilder.Entity("linksy_backend_api.Models.ChatroomMember", b =>
+                {
+                    b.Navigation("MemberPermission");
                 });
 
             modelBuilder.Entity("linksy_backend_api.Models.Message", b =>
@@ -1062,6 +1785,12 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("Chatrooms");
 
                     b.Navigation("InverseParentMessage");
+
+                    b.Navigation("MessageAttachments");
+
+                    b.Navigation("MessageDeliveries");
+
+                    b.Navigation("MessageReactions");
                 });
 
             modelBuilder.Entity("linksy_backend_api.Models.Role", b =>
@@ -1077,6 +1806,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
 
                     b.Navigation("BlockedUserBlockerUsers");
 
+                    b.Navigation("ChatroomMembers");
+
                     b.Navigation("Chatrooms");
 
                     b.Navigation("EmailOtps");
@@ -1089,17 +1820,27 @@ namespace linksy_backend_api.Infrastructure.Migrations
 
                     b.Navigation("GroupInvitationInvitedUsers");
 
+                    b.Navigation("MessageDeliveries");
+
+                    b.Navigation("MessageReactions");
+
                     b.Navigation("Messages");
+
+                    b.Navigation("NotificationSettings");
 
                     b.Navigation("Notifications");
 
-                    b.Navigation("ReceivedFriendRequests");
+                    b.Navigation("PrivacySettings");
 
-                    b.Navigation("ChatroomMembers");
+                    b.Navigation("ReceivedFriendRequests");
 
                     b.Navigation("SentFriendRequests");
 
                     b.Navigation("UserRoles");
+
+                    b.Navigation("UserSettings");
+
+                    b.Navigation("UserStatus");
                 });
 #pragma warning restore 612, 618
         }

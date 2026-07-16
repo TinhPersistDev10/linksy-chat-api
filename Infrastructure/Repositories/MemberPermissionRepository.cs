@@ -1,4 +1,5 @@
 ﻿using linksy_backend_api.Domain.Entities.Models;
+using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.Domain.Interfaces.Repositories;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories;
@@ -74,50 +75,55 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 cancellationToken);
         }
 
-        public Task<List<MemberPermission>> GetMembersWithPermissionAsync(Guid chatroomId, string permissionName, CancellationToken cancellationToken = default)
+        public Task<List<MemberPermission>> GetMembersWithPermissionAsync(
+    Guid chatroomId,
+    PermissionType permission,       // ← enum
+    CancellationToken cancellationToken = default)
         {
             var query = _context.MemberPermissions
-                .Include(mp => mp.Member)
-                    .ThenInclude(m => m.User)
-                    .Where(mp => mp.Member.ChatroomId == chatroomId && mp.Member.LeftAt == null);
-            query = permissionName switch
+                .Include(mp => mp.Member).ThenInclude(m => m.User)
+                .Where(mp => mp.Member.ChatroomId == chatroomId && mp.Member.LeftAt == null);
+
+            query = permission switch
             {
-                "CanSendMessages" => query.Where(mp => mp.CanSendMessages),
-                "CanSendMedia" => query.Where(mp => mp.CanSendMedia),
-                "CanSendVoice" => query.Where(mp => mp.CanSendVoice),
-                "CanSendFiles" => query.Where(mp => mp.CanSendFiles),
-                "CanInviteMembers" => query.Where(mp => mp.CanInviteMembers),
-                "CanRemoveMembers" => query.Where(mp => mp.CanRemoveMembers),
-                "CanEditGroupInfo" => query.Where(mp => mp.CanEditGroupInfo),
-                "CanPinMessages" => query.Where(mp => mp.CanPinMessages),
-                "CanDeleteMessages" => query.Where(mp => mp.CanDeleteMessages),
-                "CanManageCalls" => query.Where(mp => mp.CanManageCalls),
-                _ => throw new ArgumentException($"Permission '{permissionName}' không hợp lệ")
+                PermissionType.CanSendMessages => query.Where(mp => mp.CanSendMessages),
+                PermissionType.CanSendMedia => query.Where(mp => mp.CanSendMedia),
+                PermissionType.CanSendVoice => query.Where(mp => mp.CanSendVoice),
+                PermissionType.CanSendFiles => query.Where(mp => mp.CanSendFiles),
+                PermissionType.CanInviteMembers => query.Where(mp => mp.CanInviteMembers),
+                PermissionType.CanRemoveMembers => query.Where(mp => mp.CanRemoveMembers),
+                PermissionType.CanEditGroupInfo => query.Where(mp => mp.CanEditGroupInfo),
+                PermissionType.CanPinMessages => query.Where(mp => mp.CanPinMessages),
+                PermissionType.CanDeleteMessages => query.Where(mp => mp.CanDeleteMessages),
+                PermissionType.CanManageCalls => query.Where(mp => mp.CanManageCalls),
+                _ => query
             };
             return query.ToListAsync(cancellationToken);
-
-
         }
 
-        public async Task<bool> HasPermissionAsync(Guid userId, Guid chatroomId, string permissionName, CancellationToken cancellationToken = default)
+        public async Task<bool> HasPermissionAsync(
+    Guid userId,
+    Guid chatroomId,
+    PermissionType permission,       // ← enum, không phải string
+    CancellationToken cancellationToken = default)
         {
+            var record = await GetByUserAndChatroomAsync(userId, chatroomId, cancellationToken);
+            if (record is null) return false;
 
-            var permission = await GetByUserAndChatroomAsync(userId, chatroomId, cancellationToken);
-            if (permission == null) return false;
-
-            return permissionName switch
+            // Không còn default throw — compiler đảm bảo mọi case đều được xử lý
+            return permission switch
             {
-                "CanSendMessages" => permission.CanSendMessages,
-                "CanSendMedia" => permission.CanSendMedia,
-                "CanSendVoice" => permission.CanSendVoice,
-                "CanSendFiles" => permission.CanSendFiles,
-                "CanInviteMembers" => permission.CanInviteMembers,
-                "CanRemoveMembers" => permission.CanRemoveMembers,
-                "CanEditGroupInfo" => permission.CanEditGroupInfo,
-                "CanPinMessages" => permission.CanPinMessages,
-                "CanDeleteMessages" => permission.CanDeleteMessages,
-                "CanManageCalls" => permission.CanManageCalls,
-                _ => throw new ArgumentException($"Permission '{permissionName}' không hợp lệ")
+                PermissionType.CanSendMessages => record.CanSendMessages,
+                PermissionType.CanSendMedia => record.CanSendMedia,
+                PermissionType.CanSendVoice => record.CanSendVoice,
+                PermissionType.CanSendFiles => record.CanSendFiles,
+                PermissionType.CanInviteMembers => record.CanInviteMembers,
+                PermissionType.CanRemoveMembers => record.CanRemoveMembers,
+                PermissionType.CanEditGroupInfo => record.CanEditGroupInfo,
+                PermissionType.CanPinMessages => record.CanPinMessages,
+                PermissionType.CanDeleteMessages => record.CanDeleteMessages,
+                PermissionType.CanManageCalls => record.CanManageCalls,
+                _ => false
             };
         }
 

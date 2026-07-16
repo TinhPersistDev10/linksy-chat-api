@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-
 namespace linksy_backend_api.Domain.DTOs.Responses.Messages
 {
     public class MediaAttachmentResponseDto

@@ -1,31 +1,20 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using linksy_backend_api.Services.IServices;
 
 namespace linksy_backend_api.Services
 {
     public class ConnectionManager : IConnectionManager
     {
-        // Dictionary: UserId -> List of ConnectionIds
-        private static readonly ConcurrentDictionary<Guid, HashSet<string>> _userConnections = new ConcurrentDictionary<Guid, HashSet<string>>();
+        private static readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, byte>> _userConnections
+            = new();
 
-        // Dictionary: ConnectionId -> UserId
-        private static readonly ConcurrentDictionary<string, Guid> _connectionUsers = new ConcurrentDictionary<string, Guid>();
+        private static readonly ConcurrentDictionary<string, Guid> _connectionUsers = new();
         public Task AddConnectionAsync(Guid userId, string connectionId)
         {
             // Add to user -> connections mapping
-            _userConnections.AddOrUpdate(userId, new HashSet<string> { connectionId }, (key, oldValue) =>
-            {
-                oldValue.Add(connectionId);
-                return oldValue;
-            });
-
-            // Add to connection -> user mapping
-            _connectionUsers.TryAdd(connectionId, userId);
-
+            var connections = _userConnections.GetOrAdd(userId, _ => new ConcurrentDictionary<string, byte>());
+            connections.TryAdd(connectionId, default);
+            _connectionUsers[connectionId] = userId;
             return Task.CompletedTask;
         }
 
@@ -33,8 +22,7 @@ namespace linksy_backend_api.Services
         {
             if (_userConnections.TryGetValue(userId, out var connections))
             {
-                lock (connections)
-                    return Task.FromResult(connections.ToList());
+                return Task.FromResult(connections.Keys.ToList());
             }
             return Task.FromResult(new List<string>());
         }
@@ -51,29 +39,24 @@ namespace linksy_backend_api.Services
 
         public Task<Guid?> GetUserIdByConnectionAsync(string connectionId)
         {
-            if (_connectionUsers.TryGetValue(connectionId, out var userId))
-            {
-                return Task.FromResult<Guid?>(userId);
-            }
-            return Task.FromResult<Guid?>(null);
+            return _connectionUsers.TryGetValue(connectionId, out var userId)
+                ? Task.FromResult<Guid?> (userId)
+                : Task.FromResult<Guid?> (null);
         }
 
         public Task<bool> HasConnectionsAsync(Guid userId)
         {
-            return Task.FromResult(_userConnections.ContainsKey(userId));
+            return _userConnections.TryGetValue(userId, out var connections) ? Task.FromResult(!connections.IsEmpty) : Task.FromResult(false);
         }
 
         public Task RemoveConnectionAsync(Guid userId, string connectionId)
         {
-            // Remove from user -> connections mapping
-            _userConnections.AddOrUpdate(userId, new HashSet<string>(), (key, oldValue) =>
-            {
-                oldValue.Remove(connectionId);
-                return oldValue;
-            });
-
-            // Remove from connection -> user mapping
             _connectionUsers.TryRemove(connectionId, out _);
+            if (!_userConnections.TryGetValue(userId, out var connections))
+                return Task.CompletedTask;
+
+            connections.TryRemove(connectionId, out _);
+            if (connections.IsEmpty) _userConnections.TryRemove(userId, out _);
 
             return Task.CompletedTask;
         }
@@ -85,7 +68,7 @@ namespace linksy_backend_api.Services
         // Helper method để kiểm tra user có online không
         public Task<bool> IsUserOnlineAsync(Guid userId)
         {
-            return Task.FromResult(_userConnections.ContainsKey(userId));
+            return HasConnectionsAsync(userId);
         }
     }
 }

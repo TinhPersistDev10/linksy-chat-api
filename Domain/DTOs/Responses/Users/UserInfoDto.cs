@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
+//Thông tin chi tiết (profile cá nhân)
 namespace linksy_backend_api.DTOs.UserDTO
 {
     public class UserInfoDto
@@ -14,7 +15,7 @@ namespace linksy_backend_api.DTOs.UserDTO
         public string Avatar { get; set; } = string.Empty;
         public string Bio { get; set; } = string.Empty;
         public bool IsActive { get; set; } = false;
-        public DateTime? DateOfBirth { get; set; }
+        public DateOnly? DateOfBirth { get; set; }
         public bool IsEmailVerified { get; set; } = false;
         public DateTime CreatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using linksy_backend_api.Domain.Entities.Models;
 
 namespace linksy_backend_api.Models;
 
@@ -66,6 +67,14 @@ public partial class User
     public virtual ICollection<ChatroomMember> ChatroomMembers { get; set; } = new List<ChatroomMember>();
 
     public virtual ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
+
     
+    // In User.cs — ADD these navigation properties
+    public virtual UserSettings? UserSettings { get; set; }
+    public virtual NotificationSettings? NotificationSettings { get; set; }
+    public virtual PrivacySettings? PrivacySettings { get; set; }
+    public virtual UserStatus? UserStatus { get; set; }
+    public virtual ICollection<MessageReaction> MessageReactions { get; set; } = new List<MessageReaction>();
+    public virtual ICollection<MessageDelivery> MessageDeliveries { get; set; } = new List<MessageDelivery>();
 
 }

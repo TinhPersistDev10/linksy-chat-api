@@ -14,7 +14,7 @@ namespace linksy_backend_api.Controllers
 
     // [Authorize]
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/[controller]")]
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
@@ -114,6 +114,16 @@ namespace linksy_backend_api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during login");
+                if (ex.Data.Contains("Email"))
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new
+                    {
+                        success = false,
+                        message = ex.Message,
+                        email = ex.Data["Email"]?.ToString()
+                    });
+                }
+
                 return Unauthorized(new { success = false, message = ex.Message });
             }
         }
@@ -121,14 +131,24 @@ namespace linksy_backend_api.Controllers
         /// <summary>
         /// Đăng xuất
         /// </summary>
+        private bool IsLocalHttpRequest()
+        {
+            if (Request.IsHttps) return false;
+
+            var host = Request.Host.Host;
+            return host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                   host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                   host.Equals("::1", StringComparison.OrdinalIgnoreCase);
+        }
+
         private CookieOptions GetCookieOptions(DateTimeOffset? expires = null)
         {
-            var isDevelopment = _configuration.GetValue<bool>("IsDevelopment", true);
+            var isLocalHttp = IsLocalHttpRequest();
             return new CookieOptions
             {
                 HttpOnly = true,
-                Secure = !isDevelopment,
-                SameSite = SameSiteMode.Lax,
+                Secure = !isLocalHttp,
+                SameSite = isLocalHttp ? SameSiteMode.Lax : SameSiteMode.None,
                 Path = "/",
                 IsEssential = true,
                 Expires = expires
@@ -144,14 +164,14 @@ namespace linksy_backend_api.Controllers
 
         private void ClearAuthCookies()
         {
-            var isDevelopment = _configuration.GetValue<bool>("IsDevelopment", true);
-
+            var cookieOptions = GetCookieOptions(DateTimeOffset.UnixEpoch);
             var expiredOptions = new CookieOptions
             {
                 HttpOnly = true,                    // ← BẮT BUỘC phải có
-                Secure = !isDevelopment,
-                SameSite = SameSiteMode.Lax,
+                Secure = cookieOptions.Secure,
+                SameSite = cookieOptions.SameSite,
                 Path = "/",
+                IsEssential = true,
                 Expires = DateTimeOffset.UnixEpoch  // Set về 1970 → browser xóa ngay
             };
 
@@ -200,7 +220,7 @@ namespace linksy_backend_api.Controllers
         /// Refresh token
         /// </summary>
         [HttpPost("refresh-token")]
-        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto request)
+        public async Task<IActionResult> RefreshToken()
         {
             try
             {
@@ -223,31 +243,8 @@ namespace linksy_backend_api.Controllers
 
                 var result = await _authService.RefreshTokenAsync(refreshRequest);
 
-                var isDevelopment = _configuration.GetValue<bool>("IsDevelopment", true);
-
-                // Update cookies với token mới
-                var accessTokenOptions = new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = !isDevelopment,
-                    SameSite = SameSiteMode.Strict,
-                    Expires = result.ExpiresAt,
-                    Path = "/",
-                    IsEssential = true
-                };
-
-                var refreshTokenOptions = new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = !isDevelopment,
-                    SameSite = SameSiteMode.Strict,
-                    Expires = result.RefreshTokenExpiresAt,
-                    Path = "/",
-                    IsEssential = true
-                };
-
-                Response.Cookies.Append("accessToken", result.AccessToken, accessTokenOptions);
-                Response.Cookies.Append("refreshToken", result.RefreshToken, refreshTokenOptions);
+                SetAuthCookies(result.AccessToken, result.RefreshToken,
+                    result.ExpiresAt, result.RefreshTokenExpiresAt);
 
                 return Ok(new
                 {
@@ -260,16 +257,12 @@ namespace linksy_backend_api.Controllers
                 _logger.LogError(ex, "Error refreshing token");
 
                 // Nếu refresh token hết hạn, xóa cookies
-                Response.Cookies.Delete("accessToken");
-                Response.Cookies.Delete("refreshToken");
-
+                ClearAuthCookies();
                 return Unauthorized(new { success = false, message = ex.Message });
             }
         }
 
-        /// <summary>
         /// Quên mật khẩu - Gửi OTP
-        /// </summary>
         [HttpPost("forgot-password")]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto request)
         {

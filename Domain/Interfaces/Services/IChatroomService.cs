@@ -19,15 +19,14 @@ namespace linksy_backend_api.Services.IServices
 
         #region GET chatrooms and details
 
-        Task<List<ChatroomResponseDto>> GetUserChatroomsAsync(Guid userId);
+        Task<List<ChatroomResponseDto>> GetUserChatroomsAsync(Guid userId, bool includeArchived = false, string? roomType = null);
         Task<ChatroomResponseDto> GetChatroomDetailsAsync(Guid userId, Guid chatroomId);
-        Task<List<GroupInvitationRequest>> GetReceivedInvitationsAsync(Guid userId);
         #endregion
 
         #region Update chatrooms and members
         Task<ChatroomResponseDto> UpdateChatroomInfoAsync(Guid userId, Guid chatroomId, UpdateChatroomRequest request);
-        Task<ApiResponseDto> UpdateMemberPermissionAsync(Guid userId, Guid chatroomId, Guid memberId, UpdateMemberPermissionsRequest request);
         Task<AvatarResponse> UpdateGroupAvatarAsync(Guid userId, Guid chatroomId, IFormFile avatarFile);
+        Task<ApiResponseDto> UpdateMemberPermissionsAsync(Guid userId, Guid chatroomId, Guid memberId, UpdateMemberPermissionsRequest request);
         #endregion
 
         #region Add/Remove members
@@ -37,11 +36,7 @@ namespace linksy_backend_api.Services.IServices
         #endregion
 
         
-        Task<ChatroomResponseDto> MapToChatroomResponseAsync(Chatroom chatroom, Guid currentUserId);
         Task<ApiResponseDto> ArchiveChatroomAsync(Guid userId, Guid chatroomId, bool isArchived);
-        Task<ApiResponseDto> SendGroupInvitationAsync(Guid userId, Guid chatroomId, SendGroupInvitationRequest request);
-        Task<ApiResponseDto> AcceptGroupInvitationAsync(Guid userId, Guid invitationId);
-        Task<ApiResponseDto> RejectGroupInvitationAsync(Guid userId, Guid invitationId);
         Task<AvatarResponse> DeleteGroupAvatarAsync(Guid userId, Guid chatroomId);
     }
 }

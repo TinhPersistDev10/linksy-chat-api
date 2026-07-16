@@ -1,4 +1,5 @@
 ﻿using linksy_backend_api.Domain.Entities.Models;
+using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.Repositories;
 
 namespace linksy_backend_api.Domain.Interfaces.Repositories
@@ -20,9 +21,9 @@ namespace linksy_backend_api.Domain.Interfaces.Repositories
         Task<bool> DeleteAsync(Guid memberId, CancellationToken cancellationToken = default);
 
         /// Kiểm tra xem member có permission cụ thể không
-        Task<bool> HasPermissionAsync(Guid userId, Guid chatroomId, string permissionName, CancellationToken cancellationToken = default);
+        Task<bool> HasPermissionAsync(Guid userId, Guid chatroomId, PermissionType permissionName, CancellationToken cancellationToken = default);
 
         /// Lấy danh sách members có permission cụ thể
-        Task<List<MemberPermission>> GetMembersWithPermissionAsync(Guid chatroomId, string permissionName, CancellationToken cancellationToken = default);
+        Task<List<MemberPermission>> GetMembersWithPermissionAsync(Guid chatroomId, PermissionType permissionName, CancellationToken cancellationToken = default);
     }
 }

@@ -13,8 +13,10 @@ namespace linksy_backend_api.Infrastructure.Data.Configurations
         public void Configure(EntityTypeBuilder<Friendship> entity)
         {
             entity.HasKey(e => e.FriendshipId).HasName("friendships_pkey");
-            entity.ToTable("friendships");
-
+            entity.ToTable("friendships", t =>
+            {
+                t.HasCheckConstraint("CK_Friendships_DifferentUsers", "user1_id != user2_id");
+            });
             entity.Property(e => e.FriendshipId).HasColumnName("friendship_id");
             entity.Property(e => e.User1Id).HasColumnName("user1_id");
             entity.Property(e => e.User2Id).HasColumnName("user2_id");
@@ -48,9 +50,7 @@ namespace linksy_backend_api.Infrastructure.Data.Configurations
                 .OnDelete(DeleteBehavior.Cascade) // Dùng Cascade như thiết kế
                 .HasConstraintName("friendships_user2_id_fkey");
 
-            // Thêm Check Constraint
-            entity.HasCheckConstraint("CK_Friendships_DifferentUsers",
-                "user1_id != user2_id");
+
         }
     }
 }

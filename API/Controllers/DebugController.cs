@@ -12,7 +12,7 @@ namespace linksy_backend_api.Controllers
 {
     // [Authorize]
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v1/[controller]")]
     public class DebugController : ControllerBase
     {
         private readonly ILogger<DebugController> _logger;
