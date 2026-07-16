@@ -15,6 +15,7 @@ using linksy_backend_api.Repositories.IRepositories;
 using linksy_backend_api.Services;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -347,6 +348,32 @@ builder.Services.AddResponseCompression(opts =>
 builder.Services.Configure<RouteOptions>(options =>
 {
     options.LowercaseUrls = true;
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("auth", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueLimit = 0;
+    });
+    options.AddSlidingWindowLimiter("api", o =>
+    {
+        o.PermitLimit = 100;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.SegmentsPerWindow = 4;
+        o.QueueLimit = 0;
+    });
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            success = false,
+            code = "TOO_MANY_REQUESTS",
+            message = "Bạn gửi quá nhiều request. Vui lòng thử lại sau."
+        }, token);
+    };
 });
 
 var app = builder.Build();
