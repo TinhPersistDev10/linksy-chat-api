@@ -15,6 +15,7 @@ using linksy_backend_api.Repositories.IRepositories;
 using linksy_backend_api.Services;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -158,7 +159,15 @@ builder.Services.AddAuthentication(options =>
 
         OnAuthenticationFailed = context =>
         {
-            Console.WriteLine($"[JWT] Authentication failed: {context.Exception.Message}");
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Jwt");
+            logger.LogWarning(
+                context.Exception,
+                "JWT authentication failed. Path={Path}, TraceId={TraceId}",
+                context.Request.Path,
+                context.HttpContext.TraceIdentifier);
+
             if (context.Exception is SecurityTokenExpiredException)
                 context.Response.Headers["Token-Expired"] = "true";
             return Task.CompletedTask;
@@ -222,98 +231,21 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
-var allowAnyOrigin = builder.Configuration.GetValue<bool>("Cors:AllowAnyOrigin");
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 
-// Danh sách origins tĩnh (production + local dev)
-var staticOrigins = new[]
+builder.Services.AddCors(option =>
 {
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://linksy-frontend-ashen.vercel.app"
-};
-
-// Origins bổ sung từ config / env (dùng cho staging hoặc custom domain)
-var extraOrigins = builder.Configuration
-    .GetSection("Cors:AllowedOrigins")
-    .Get<string[]>() ?? Array.Empty<string>();
-
-var allStaticOrigins = staticOrigins.Concat(extraOrigins).ToArray();
-
-var vercelProjectName = builder.Configuration.GetValue<string>("Cors:VercelProjectName")
-                        ?? "linksy-frontend";
-var vercelTeamSlug = builder.Configuration.GetValue<string>("Cors:VercelTeamSlug")
-                     ?? "";
-
-static bool IsVercelPreviewUrl(string origin, string projectName, string teamSlug)
-{
-    try
+    option.AddPolicy("Frontend", policy =>
     {
-        var uri = new Uri(origin);
-        if (uri.Scheme != "https") return false;
-
-        var host = uri.Host;
-        if (!host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return false;
-
-        // Host phải bắt đầu bằng "<projectName>-"
-        var prefix = projectName + "-";
-        if (!host.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
-
-        // Nếu có team slug → host phải kết thúc bằng "-<teamSlug>.vercel.app"
-        if (!string.IsNullOrEmpty(teamSlug))
-        {
-            var teamSuffix = "-" + teamSlug + ".vercel.app";
-            return host.EndsWith(teamSuffix, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return true;
-    }
-    catch
-    {
-        return false;
-    }
-}
-
-Console.WriteLine($"[CORS] AllowAnyOrigin={allowAnyOrigin}, StaticOrigins={allStaticOrigins.Length}");
-Console.WriteLine($"[CORS] VercelProject={vercelProjectName}, VercelTeam={vercelTeamSlug}");
-
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("Frontend", policy =>
-    {
-        if (allowAnyOrigin)
-        {
-            // Dev only — cho phép mọi origin
-            policy.SetIsOriginAllowed(_ => true)
-                  .AllowAnyMethod()
-                  .AllowAnyHeader()
-                  .AllowCredentials();
-
-            Console.WriteLine("[CORS] Mode: AllowAnyOrigin (development)");
-        }
-        else
-        {
-            // Production — chỉ cho phép origins đã biết + Vercel preview URLs
-            policy.SetIsOriginAllowed(origin =>
-                  {
-                      if (allStaticOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
-                          return true;
-
-                      if (IsVercelPreviewUrl(origin, vercelProjectName, vercelTeamSlug))
-                      {
-                          Console.WriteLine($"[CORS] Allowed Vercel preview: {origin}");
-                          return true;
-                      }
-
-                      Console.WriteLine($"[CORS] Blocked origin: {origin}");
-                      return false;
-                  })
-                  .AllowAnyMethod()
-                  .AllowAnyHeader()
-                  .AllowCredentials();
-
-            Console.WriteLine($"[CORS] Mode: Restricted — allowed static origins: {string.Join(", ", allStaticOrigins)}");
-        }
+        policy
+            .SetIsOriginAllowed(origin =>
+            {
+                var allowed = allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
+                return allowed;
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -327,7 +259,6 @@ builder.Services.AddSignalR(options =>
 
 // ── Repository Pattern ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-builder.Services.AddScoped<UnitOfWork>();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
 // ── Services ──────────────────────────────────────────────────────────────────
@@ -418,23 +349,49 @@ builder.Services.Configure<RouteOptions>(options =>
 {
     options.LowercaseUrls = true;
 });
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("auth", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueLimit = 0;
+    });
+    options.AddSlidingWindowLimiter("api", o =>
+    {
+        o.PermitLimit = 100;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.SegmentsPerWindow = 4;
+        o.QueueLimit = 0;
+    });
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            success = false,
+            code = "TOO_MANY_REQUESTS",
+            message = "Bạn gửi quá nhiều request. Vui lòng thử lại sau."
+        }, token);
+    };
+});
 
-// ═════════════════════════════════════════════════════════════════════════════
 var app = builder.Build();
-// ═════════════════════════════════════════════════════════════════════════════
-
-// ── CORS debug middleware (chỉ chạy khi không phải Production) ────────────────
 if (!app.Environment.IsProduction())
 {
     app.Use(async (context, next) =>
     {
-        var origin = context.Request.Headers["Origin"].ToString();
-        if (!string.IsNullOrEmpty(origin))
-            Console.WriteLine($"[CORS-DEBUG] Incoming request from origin: {origin} → {context.Request.Method} {context.Request.Path}");
+        var origin = context.Request.Headers.Origin.ToString();
+
+        Console.WriteLine(
+            $"[HTTP] Origin={origin} Method={context.Request.Method} Path={context.Request.Path}");
+
         await next();
+
+        Console.WriteLine(
+            $"[HTTP] Status={context.Response.StatusCode} Path={context.Request.Path}");
     });
 }
-
 // ── Swagger ───────────────────────────────────────────────────────────────────
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -442,16 +399,87 @@ app.UseSwaggerUI(c =>
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Linksy API V1");
     c.RoutePrefix = string.Empty;
 });
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("GlobalException");
 
+        var exceptionFeature = context.Features
+            .Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+
+        var exception = exceptionFeature?.Error;
+        var traceId = context.TraceIdentifier;
+
+        if (exception != null)
+        {
+            logger.LogError(
+                exception,
+                "Unhandled exception. Path={Path}, Method={Method}, TraceId={TraceId}",
+                context.Request.Path,
+                context.Request.Method,
+                traceId);
+        }
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            success = false,
+            code = "INTERNAL_SERVER_ERROR",
+            message = "Có lỗi xảy ra trong hệ thống.",
+            traceId
+        });
+    });
+});
 // ── Middleware pipeline (thứ tự quan trọng) ───────────────────────────────────
 app.UseResponseCompression();
+
 app.UseRouting();
-app.UseCors("Frontend");          // ← phải sau UseRouting, trước UseAuthentication
+
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("HttpRequest");
+    var startedAt = DateTime.Now;
+    var origin = context.Request.Headers.Origin.ToString();
+    var method = context.Request.Method;
+    var path = context.Request.Path.ToString();
+    var traceId = context.TraceIdentifier;
+    var userId = context.User.FindFirst("user_id")?.Value;
+    try
+    {
+        await next();
+    }
+    finally
+    {
+        var durationMs = (DateTime.Now - startedAt).TotalMilliseconds;
+        logger.LogInformation(
+            "HTTP {Method} {Path} responded {StatusCode} in {DurationMs}ms. Origin={Origin}, UserId={UserId}, TraceId={TraceId}",
+            method,
+            path,
+            context.Response.StatusCode,
+            durationMs,
+            string.IsNullOrWhiteSpace(origin) ? "none" : origin,
+            string.IsNullOrWhiteSpace(userId) ? "anonymous" : userId,
+            traceId);
+    }
+});
+
+app.UseCors("Frontend");
+
 app.UseAuthentication();
+app.UseRateLimiter();
+
 app.UseAuthorization();
 
 // ── Endpoints ─────────────────────────────────────────────────────────────────
 app.MapHealthChecks("/health");
+
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
 
