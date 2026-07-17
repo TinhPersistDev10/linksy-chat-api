@@ -229,7 +229,12 @@ namespace linksy_backend_api.Infrastructure.Services
         // DOMAIN NOTIFICATIONS
         // ─────────────────────────────────────────────────────────────────────
 
-        public async Task NotifyNewMessageAsync(Message message, User sender, Chatroom chatroom, List<Guid> recipientIds)
+        public async Task NotifyNewMessageAsync(
+            Message message,
+            User sender,
+            Chatroom chatroom,
+            List<Guid> recipientIds,
+            List<Guid>? mentionedUserIds = null)
         {
             try
             {
@@ -237,26 +242,61 @@ namespace linksy_backend_api.Infrastructure.Services
                     ? sender.Fullname ?? sender.Username ?? "Chat"
                     : chatroom.RoomName ?? "Chat";
 
+                var mentionedSet = mentionedUserIds?.ToHashSet() ?? [];
+                var previewBody = message.MessageType switch
+                {
+                    "image" => "Đã gửi một ảnh",
+                    "file" => "Đã gửi một file",
+                    "voice" or "audio" => "Đã gửi tin nhắn thoại",
+                    _ => message.MessageText ?? string.Empty
+                };
+
                 foreach (var recipientId in recipientIds)
                 {
+                    var isMention = mentionedSet.Contains(recipientId);
+                    var notificationType = isMention ? "mention" : "new_message";
+
+                    if (isMention)
+                    {
+                        try
+                        {
+                            await CreateNotificationAsync(new CreateNotificationRequest
+                            {
+                                UserId = recipientId,
+                                NotificationType = "mention",
+                                Title = roomName,
+                                Body = $"{sender.Fullname ?? sender.Username} đã nhắc đến bạn",
+                                RelatedEntityId = message.MessageId,
+                                RelatedEntityType = "message",
+                                ActionUrl = $"/chat/{chatroom.ChatroomId}?messageId={message.MessageId}",
+                                ImageUrl = sender.Avatar
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(
+                                ex,
+                                "Failed to persist mention notification. MessageId={MessageId}, UserId={UserId}",
+                                message.MessageId,
+                                recipientId);
+                        }
+                    }
+
                     var connections = await _connectionManager.GetConnectionsAsync(recipientId);
                     if (!connections.Any()) continue;
 
                     await _hubContext.Clients.Clients(connections)
                         .SendAsync("ReceiveMessageNotification", new
                         {
-                            NotificationType = "new_message",
+                            NotificationType = notificationType,
                             ChatroomId = chatroom.ChatroomId,
+                            MessageId = message.MessageId,
                             SenderId = sender.UserId,
                             SenderName = sender.Fullname ?? sender.Username,
                             Title = roomName,
-                            Body = message.MessageType switch
-                            {
-                                "image" => "Đã gửi một ảnh",
-                                "file" => "Đã gửi một file",
-                                "voice" => "Đã gửi tin nhắn thoại",
-                                _ => message.MessageText ?? string.Empty
-                            },
+                            Body = isMention
+                                ? $"{sender.Fullname ?? sender.Username} đã nhắc đến bạn: {previewBody}"
+                                : previewBody,
                             SentAt = message.SentAt
                         });
                 }

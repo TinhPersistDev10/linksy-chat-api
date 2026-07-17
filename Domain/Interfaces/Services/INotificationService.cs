@@ -23,7 +23,12 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task<ApiResponseDto> DeleteNotificationAsync(Guid userId, Guid notificationId);
         Task<ApiResponseDto> DeleteAllNotificationsAsync(Guid userId);
 
-        Task NotifyNewMessageAsync(Message message, User sender, Chatroom chatroom, List<Guid> recipientIds);
+        Task NotifyNewMessageAsync(
+            Message message,
+            User sender,
+            Chatroom chatroom,
+            List<Guid> recipientIds,
+            List<Guid>? mentionedUserIds = null);
         Task NotifyNewFriendRequestAsync(Guid senderId, Guid receiverId, Guid requestId);
         Task NotifyFriendRequestAcceptedAsync(Guid accepterId, Guid senderId, Guid friendshipId);
         Task NotifyGroupInvitationAsync(Guid invitedBy, Guid invitedUserId, Guid chatroomId, Guid invitationId);

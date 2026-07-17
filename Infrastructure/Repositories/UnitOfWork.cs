@@ -40,6 +40,7 @@ namespace linksy_backend_api.Repositories
             MessageAttachments = new Repository<MessageAttachment>(_context);
             MessageReactions = new Repository<MessageReaction>(_context);
             MessageDeliveries = new Repository<MessageDelivery>(_context);
+            MessageMentions = new Repository<MessageMention>(_context);
 
             CallLogs = new Repository<CallLog>(_context);
             CallParticipants = new Repository<CallParticipant>(_context);
@@ -89,6 +90,7 @@ namespace linksy_backend_api.Repositories
         public IRepository<MessageAttachment> MessageAttachments { get; private set; } = null!;
         public IRepository<MessageReaction> MessageReactions { get; private set; } = null!;
         public IRepository<MessageDelivery> MessageDeliveries { get; private set; } = null!;
+        public IRepository<MessageMention> MessageMentions { get; private set; } = null!;
         public IRepository<CallLog> CallLogs { get; private set; } = null!;
         public IRepository<CallParticipant> CallParticipants { get; private set; } = null!;
         public IRepository<Friendship> Friendships { get; private set; } = null!;

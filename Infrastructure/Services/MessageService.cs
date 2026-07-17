@@ -195,6 +195,14 @@ namespace linksy_backend_api.Infrastructure.Services
                     );
             }
 
+            var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(messageDto.ChatroomId)
+                ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");
+
+            var validatedMentions = await ValidateMentionsAsync(
+                chatroom,
+                userId,
+                messageDto.Mentions);
+
             await _unitOfWork.BeginTransactionAsync();
             Message message;
             try
@@ -205,7 +213,8 @@ namespace linksy_backend_api.Infrastructure.Services
                     messageDto.MessageType,
                     messageDto.MessageText,
                     messageDto.ParentMessageId,
-                    messageDto.Attachments);
+                    messageDto.Attachments,
+                    validatedMentions);
 
                 await _unitOfWork.CommitTransactionAsync();
             }
@@ -249,13 +258,49 @@ namespace linksy_backend_api.Infrastructure.Services
         /// (system-generated) so both stay consistent without duplicating the
         /// persistence steps. Caller owns the transaction.
         /// </summary>
+        private const int MaxMentionsPerMessage = 20;
+
+        private async Task<List<Guid>> ValidateMentionsAsync(
+            Chatroom chatroom,
+            Guid senderId,
+            List<Guid>? mentions)
+        {
+            if (mentions is null || mentions.Count == 0)
+                return [];
+
+            if (!string.Equals(chatroom.RoomType, "group", StringComparison.OrdinalIgnoreCase))
+                return [];
+
+            var distinctMentions = mentions
+                .Where(id => id != Guid.Empty && id != senderId)
+                .Distinct()
+                .ToList();
+
+            if (distinctMentions.Count == 0)
+                return [];
+
+            if (distinctMentions.Count > MaxMentionsPerMessage)
+                throw new ArgumentException($"Mỗi tin nhắn chỉ được tag tối đa {MaxMentionsPerMessage} người.");
+
+            var activeMemberIds = (await _unitOfWork.ChatroomMemberRepository
+                .GetActiveMemberIdsExceptAsync(chatroom.ChatroomId, Guid.Empty))
+                .ToHashSet();
+
+            var invalid = distinctMentions.Where(id => !activeMemberIds.Contains(id)).ToList();
+            if (invalid.Count > 0)
+                throw new ArgumentException("Chỉ có thể tag thành viên đang hoạt động trong nhóm.");
+
+            return distinctMentions;
+        }
+
         private async Task<Message> PersistMessageRecordAsync(
             Guid chatroomId,
             Guid? senderId,
             string messageType,
             string messageText,
             Guid? parentMessageId,
-            IEnumerable<Domain.DTOs.Requests.SendMessageAttachmentRequest>? attachments)
+            IEnumerable<Domain.DTOs.Requests.SendMessageAttachmentRequest>? attachments,
+            IReadOnlyCollection<Guid>? mentionedUserIds = null)
         {
             var message = new Message
             {
@@ -291,6 +336,19 @@ namespace linksy_backend_api.Infrastructure.Services
                         UploadedAt = DateTime.UtcNow
                     };
                     await _unitOfWork.MessageAttachments.AddAsync(attachment);
+                }
+            }
+
+            if (mentionedUserIds is not null)
+            {
+                foreach (var mentionedUserId in mentionedUserIds)
+                {
+                    await _unitOfWork.MessageMentions.AddAsync(new MessageMention
+                    {
+                        MessageId = message.MessageId,
+                        MentionedUserId = mentionedUserId,
+                        CreatedAt = DateTime.UtcNow
+                    });
                 }
             }
 
@@ -830,10 +888,35 @@ namespace linksy_backend_api.Infrastructure.Services
                     return;
                 }
 
-                var recipientIds = await _unitOfWork.ChatroomMemberRepository
-                .GetActiveMemberIdsExceptAsync(message.ChatroomId, senderId);
+                var mentionedUserIds = await _unitOfWork.MessageMentions
+                    .Query()
+                    .Where(m => m.MessageId == message.MessageId)
+                    .Select(m => m.MentionedUserId)
+                    .ToListAsync();
 
-                await _messageNotificationService.NotifyNewMessageAsync(message, sender, chatroom, recipientIds);
+                var members = await _unitOfWork.ChatroomMemberRepository
+                    .GetActiveMembersWithUserAsync(message.ChatroomId);
+
+                var mentionedSet = mentionedUserIds.ToHashSet();
+                var recipientIds = new List<Guid>();
+
+                foreach (var member in members.Where(m => m.UserId != senderId))
+                {
+                    var preference = (member.NotificationPreference ?? "all").Trim().ToLowerInvariant();
+                    if (preference == "mute")
+                        continue;
+                    if (preference == "mentions" && !mentionedSet.Contains(member.UserId))
+                        continue;
+
+                    recipientIds.Add(member.UserId);
+                }
+
+                await _messageNotificationService.NotifyNewMessageAsync(
+                    message,
+                    sender,
+                    chatroom,
+                    recipientIds,
+                    mentionedUserIds);
             }
             catch (Exception ex)
             {

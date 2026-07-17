@@ -39,6 +39,7 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<MessageAttachment> MessageAttachments { get; set; }
     public virtual DbSet<MessageReaction> MessageReactions { get; set; }
     public virtual DbSet<MessageDelivery> MessageDeliveries { get; set; }
+    public virtual DbSet<MessageMention> MessageMentions { get; set; }
     // Thêm vào LinksyDbContext.cs
     public virtual DbSet<CallLog> CallLogs { get; set; }
     public virtual DbSet<CallParticipant> CallParticipants { get; set; }
@@ -80,6 +81,7 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new MessageAttachmentConfiguration());
         modelBuilder.ApplyConfiguration(new MessageReactionConfiguration());
         modelBuilder.ApplyConfiguration(new MessageDeliveryConfiguration());
+        modelBuilder.ApplyConfiguration(new MessageMentionConfiguration());
 
         // Trong OnModelCreating:
         modelBuilder.ApplyConfiguration(new CallLogConfiguration());

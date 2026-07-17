@@ -34,5 +34,6 @@ namespace linksy_backend_api.DTOs.MessagesDTOs
         public int DeliveredCount { get; set; }
         public int ReadCount { get; set; }
         public List<MediaAttachmentResponseDto>? Attachments { get; set; }
+        public List<MentionDto>? Mentions { get; set; }
     }
 }

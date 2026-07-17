@@ -324,6 +324,32 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.ToTable("message_deliveries", (string)null);
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageMention", b =>
+                {
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<Guid>("MentionedUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("mentioned_user_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("MessageId", "MentionedUserId")
+                        .HasName("message_mentions_pkey");
+
+                    b.HasIndex(new[] { "MentionedUserId" }, "message_mentions_mentioned_user_id_idx");
+
+                    b.HasIndex(new[] { "MessageId" }, "message_mentions_message_id_idx");
+
+                    b.ToTable("message_mentions", (string)null);
+                });
+
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
                 {
                     b.Property<Guid>("ReactionId")
@@ -1472,6 +1498,27 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageMention", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.Message", "Message")
+                        .WithMany("MessageMentions")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_mentions_message_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "MentionedUser")
+                        .WithMany("MessageMentions")
+                        .HasForeignKey("MentionedUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_mentions_mentioned_user_id_fkey");
+
+                    b.Navigation("Message");
+
+                    b.Navigation("MentionedUser");
+                });
+
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
                 {
                     b.HasOne("linksy_backend_api.Models.Message", "Message")
@@ -1790,6 +1837,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
 
                     b.Navigation("MessageDeliveries");
 
+                    b.Navigation("MessageMentions");
+
                     b.Navigation("MessageReactions");
                 });
 
@@ -1821,6 +1870,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("GroupInvitationInvitedUsers");
 
                     b.Navigation("MessageDeliveries");
+
+                    b.Navigation("MessageMentions");
 
                     b.Navigation("MessageReactions");
 
