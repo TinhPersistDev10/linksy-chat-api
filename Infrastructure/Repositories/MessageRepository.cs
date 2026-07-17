@@ -28,6 +28,96 @@ namespace linksy_backend_api.Repositories
                 .ToListAsync();
         }
 
+        public async Task<(List<Message> Messages, bool HasMoreBefore)> GetMessagesAroundAsync(
+            Guid chatroomId,
+            Guid messageId,
+            int beforeCount,
+            int afterCount)
+        {
+            var target = await Query()
+                .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
+                .FirstOrDefaultAsync(m =>
+                    m.MessageId == messageId &&
+                    m.ChatroomId == chatroomId &&
+                    (m.IsDeleted == null || m.IsDeleted == false));
+
+            if (target is null)
+                return (new List<Message>(), false);
+
+            var older = await Query()
+                .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
+                .Where(m =>
+                    m.ChatroomId == chatroomId &&
+                    (m.IsDeleted == null || m.IsDeleted == false) &&
+                    (m.SentAt < target.SentAt ||
+                     (m.SentAt == target.SentAt && m.MessageId.CompareTo(target.MessageId) < 0)))
+                .OrderByDescending(m => m.SentAt)
+                .ThenByDescending(m => m.MessageId)
+                .Take(beforeCount + 1)
+                .ToListAsync();
+
+            var hasMoreBefore = older.Count > beforeCount;
+            if (hasMoreBefore)
+                older = older.Take(beforeCount).ToList();
+
+            var newer = await Query()
+                .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
+                .Where(m =>
+                    m.ChatroomId == chatroomId &&
+                    (m.IsDeleted == null || m.IsDeleted == false) &&
+                    (m.SentAt > target.SentAt ||
+                     (m.SentAt == target.SentAt && m.MessageId.CompareTo(target.MessageId) > 0)))
+                .OrderBy(m => m.SentAt)
+                .ThenBy(m => m.MessageId)
+                .Take(afterCount)
+                .ToListAsync();
+
+            older.Reverse();
+            var result = new List<Message>(older.Count + 1 + newer.Count);
+            result.AddRange(older);
+            result.Add(target);
+            result.AddRange(newer);
+            return (result, hasMoreBefore);
+        }
+
+        public async Task<(List<Message> Messages, bool HasMore)> GetMessagesBeforeAsync(
+            Guid chatroomId,
+            Guid beforeMessageId,
+            int pageSize)
+        {
+            var anchor = await Query()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m =>
+                    m.MessageId == beforeMessageId &&
+                    m.ChatroomId == chatroomId);
+
+            if (anchor is null)
+                return (new List<Message>(), false);
+
+            var batch = await Query()
+                .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
+                .Where(m =>
+                    m.ChatroomId == chatroomId &&
+                    (m.IsDeleted == null || m.IsDeleted == false) &&
+                    (m.SentAt < anchor.SentAt ||
+                     (m.SentAt == anchor.SentAt && m.MessageId.CompareTo(anchor.MessageId) < 0)))
+                .OrderByDescending(m => m.SentAt)
+                .ThenByDescending(m => m.MessageId)
+                .Take(pageSize + 1)
+                .ToListAsync();
+
+            var hasMore = batch.Count > pageSize;
+            if (hasMore)
+                batch = batch.Take(pageSize).ToList();
+
+            batch.Reverse();
+            return (batch, hasMore);
+        }
+
         public async Task<Message?> GetLastMessageAsync(Guid chatroomId)
         {
             return await Query()

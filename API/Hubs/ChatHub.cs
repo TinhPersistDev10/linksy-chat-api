@@ -258,6 +258,68 @@ namespace linksy_backend_api.Hubs
             }
         }
 
+        public async Task PinMessage(Guid messageId)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _messageService.PinMessageAsync(userId.Value, messageId);
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException)
+            {
+                throw HubErrors.MessageNotFound();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw HubErrors.MessagePinForbidden();
+            }
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("đã được ghim", StringComparison.OrdinalIgnoreCase))
+            {
+                throw HubErrors.MessageAlreadyPinned();
+            }
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("đã xóa", StringComparison.OrdinalIgnoreCase))
+            {
+                throw HubErrors.MessageAlreadyDeleted();
+            }
+            catch (InvalidOperationException)
+            {
+                throw HubErrors.MessagePinFailed();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error pinning MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw HubErrors.MessagePinFailed();
+            }
+        }
+
+        public async Task UnpinMessage(Guid messageId)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _messageService.UnpinMessageAsync(userId.Value, messageId);
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException)
+            {
+                throw HubErrors.MessageNotPinned();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw HubErrors.MessagePinForbidden();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error unpinning MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw HubErrors.MessageUnpinFailed();
+            }
+        }
+
         // Xóa tin nhắn
         public async Task DeleteMessage(Guid messageId)
         {

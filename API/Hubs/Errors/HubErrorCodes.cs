@@ -17,6 +17,11 @@ public static class HubErrorCodes
     public const string MarkAsReadFailed = "MARK_AS_READ_FAILED";
     public const string MessageReplyForbidden = "MESSAGE_REPLY_FORBIDDEN";
     public const string ParentMessageDeleted = "PARENT_MESSAGE_DELETED";
+    public const string MessagePinForbidden = "MESSAGE_PIN_FORBIDDEN";
+    public const string MessagePinFailed = "MESSAGE_PIN_FAILED";
+    public const string MessageUnpinFailed = "MESSAGE_UNPIN_FAILED";
+    public const string MessageAlreadyPinned = "MESSAGE_ALREADY_PINNED";
+    public const string MessageNotPinned = "MESSAGE_NOT_PINNED";
 
     //Call
     // Thêm vào cuối HubErrorCodes.cs

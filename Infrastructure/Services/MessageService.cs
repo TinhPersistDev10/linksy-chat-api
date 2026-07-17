@@ -86,6 +86,70 @@ namespace linksy_backend_api.Infrastructure.Services
             return result;
         }
 
+        public async Task<(List<MessageResponse> Messages, bool HasMoreBefore)> GetMessagesAroundAsync(
+            Guid userId,
+            Guid chatroomId,
+            Guid messageId,
+            int beforeCount = 20,
+            int afterCount = 15)
+        {
+            var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(
+                rm => rm.ChatroomId == chatroomId && rm.UserId == userId && rm.LeftAt == null);
+
+            if (!isMember)
+                throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
+
+            var (messages, hasMoreBefore) = await _unitOfWork.MessageRepository
+                .GetMessagesAroundAsync(chatroomId, messageId, beforeCount, afterCount);
+
+            if (messages.Count == 0)
+                throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
+
+            return (await MapMessagesWithDeliveriesAsync(messages, userId), hasMoreBefore);
+        }
+
+        public async Task<(List<MessageResponse> Messages, bool HasMore)> GetMessagesBeforeAsync(
+            Guid userId,
+            Guid chatroomId,
+            Guid beforeMessageId,
+            int pageSize = 50)
+        {
+            var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(
+                rm => rm.ChatroomId == chatroomId && rm.UserId == userId && rm.LeftAt == null);
+
+            if (!isMember)
+                throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
+
+            var (messages, hasMore) = await _unitOfWork.MessageRepository
+                .GetMessagesBeforeAsync(chatroomId, beforeMessageId, pageSize);
+
+            return (await MapMessagesWithDeliveriesAsync(messages, userId), hasMore);
+        }
+
+        private async Task<List<MessageResponse>> MapMessagesWithDeliveriesAsync(
+            List<Message> messages,
+            Guid userId)
+        {
+            var messageIds = messages.Select(message => message.MessageId).ToArray();
+            var deliveries = messageIds.Length == 0
+                ? new List<MessageDelivery>()
+                : await _unitOfWork.MessageDeliveryRepository.GetByMessageIdsAsync(messageIds);
+            var deliveriesByMessage = deliveries
+                .GroupBy(delivery => delivery.MessageId)
+                .ToDictionary(group => group.Key, group => group.ToList());
+
+            var result = new List<MessageResponse>(messages.Count);
+            foreach (var message in messages)
+            {
+                var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
+                deliveriesByMessage.TryGetValue(message.MessageId, out var messageDeliveries);
+                ApplyDeliverySummary(response, messageDeliveries ?? new());
+                result.Add(response);
+            }
+
+            return result;
+        }
+
         public async Task<List<MessageResponse>> GetRepliesAsync(Guid userId, Guid messageId)
         {
             var parent = await _unitOfWork.Messages.GetByIdAsync(messageId)
@@ -571,12 +635,18 @@ namespace linksy_backend_api.Infrastructure.Services
                 throw new UnauthorizedAccessException("Bạn không có quyền xóa tin nhắn này.");
             await _unitOfWork.BeginTransactionAsync();
 
+            var existingPin = await _unitOfWork.PinnedMessages.Query()
+                .FirstOrDefaultAsync(p => p.MessageId == messageId);
+
             try
             {
                 message.IsDeleted = true;
                 message.DeletedAt = DateTime.UtcNow;
 
                 _unitOfWork.Messages.Update(message);
+                if (existingPin != null)
+                    _unitOfWork.PinnedMessages.Remove(existingPin);
+
                 await _unitOfWork.SaveChangesAsync();
 
                 await _unitOfWork.CommitTransactionAsync();
@@ -632,6 +702,18 @@ namespace linksy_backend_api.Infrastructure.Services
                 await _hubContext.Clients
                     .Group(message.ChatroomId.ToString())
                     .SendAsync("MessageDeleted", deletedEvent);
+
+                if (existingPin != null)
+                {
+                    await _hubContext.Clients
+                        .Group(message.ChatroomId.ToString())
+                        .SendAsync("MessageUnpinned", new MessageUnpinnedEvent
+                        {
+                            ChatroomId = message.ChatroomId,
+                            MessageId = messageId,
+                            UnpinnedBy = userId
+                        });
+                }
             }
             catch (Exception ex)
             {
@@ -923,6 +1005,161 @@ namespace linksy_backend_api.Infrastructure.Services
                 _logger.LogError(ex, "Error creating message notifications");
                 throw;
             }
+        }
+
+        private const int MaxPinnedMessagesPerChatroom = 20;
+
+        public async Task<PinnedMessageResponse> PinMessageAsync(Guid userId, Guid messageId)
+        {
+            var message = await _unitOfWork.Messages.Query()
+                .Include(m => m.Sender)
+                .FirstOrDefaultAsync(m => m.MessageId == messageId)
+                ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
+
+            if (message.IsDeleted == true)
+                throw new InvalidOperationException("Không thể ghim tin nhắn đã xóa.");
+
+            var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(message.ChatroomId)
+                ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");
+
+            await EnsureCanPinAsync(userId, chatroom);
+
+            var alreadyPinned = await _unitOfWork.PinnedMessages.AnyAsync(p =>
+                p.ChatroomId == message.ChatroomId && p.MessageId == messageId);
+            if (alreadyPinned)
+                throw new InvalidOperationException("Tin nhắn đã được ghim.");
+
+            var pinnedCount = await _unitOfWork.PinnedMessages.Query()
+                .CountAsync(p => p.ChatroomId == message.ChatroomId);
+            if (pinnedCount >= MaxPinnedMessagesPerChatroom)
+                throw new InvalidOperationException(
+                    $"Mỗi phòng chat chỉ được ghim tối đa {MaxPinnedMessagesPerChatroom} tin nhắn.");
+
+            var pinnedBy = await _unitOfWork.Users.GetByIdAsync(userId);
+            var pin = new PinnedMessage
+            {
+                PinnedMessageId = Guid.NewGuid(),
+                ChatroomId = message.ChatroomId,
+                MessageId = message.MessageId,
+                PinnedByUserId = userId,
+                PinnedAt = DateTime.UtcNow
+            };
+
+            await _unitOfWork.PinnedMessages.AddAsync(pin);
+            await _unitOfWork.SaveChangesAsync();
+
+            var response = ToPinnedResponse(pin, message, pinnedBy);
+
+            try
+            {
+                await _hubContext.Clients.Group(message.ChatroomId.ToString())
+                    .SendAsync("MessagePinned", new MessagePinnedEvent
+                    {
+                        ChatroomId = message.ChatroomId,
+                        PinnedMessage = response
+                    });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "SignalR broadcast failed for MessagePinned. MessageId={MessageId}", messageId);
+            }
+
+            return response;
+        }
+
+        public async Task UnpinMessageAsync(Guid userId, Guid messageId)
+        {
+            var pin = await _unitOfWork.PinnedMessages.Query()
+                .FirstOrDefaultAsync(p => p.MessageId == messageId)
+                ?? throw new KeyNotFoundException("Tin nhắn chưa được ghim.");
+
+            var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(pin.ChatroomId)
+                ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");
+
+            await EnsureCanPinAsync(userId, chatroom);
+
+            _unitOfWork.PinnedMessages.Remove(pin);
+            await _unitOfWork.SaveChangesAsync();
+
+            try
+            {
+                await _hubContext.Clients.Group(pin.ChatroomId.ToString())
+                    .SendAsync("MessageUnpinned", new MessageUnpinnedEvent
+                    {
+                        ChatroomId = pin.ChatroomId,
+                        MessageId = messageId,
+                        UnpinnedBy = userId
+                    });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "SignalR broadcast failed for MessageUnpinned. MessageId={MessageId}", messageId);
+            }
+        }
+
+        public async Task<List<PinnedMessageResponse>> GetPinnedMessagesAsync(Guid userId, Guid chatroomId)
+        {
+            var isMember = await _unitOfWork.ChatroomMemberRepository
+                .HasActiveMemberAsync(chatroomId, userId);
+            if (!isMember)
+                throw new UnauthorizedAccessException("Bạn không phải là thành viên của phòng chat này.");
+
+            var pins = await _unitOfWork.PinnedMessages.Query()
+                .Where(p => p.ChatroomId == chatroomId)
+                .Include(p => p.Message).ThenInclude(m => m.Sender)
+                .Include(p => p.PinnedByUser)
+                .OrderByDescending(p => p.PinnedAt)
+                .ToListAsync();
+
+            return pins
+                .Where(p => p.Message.IsDeleted != true)
+                .Select(p => ToPinnedResponse(p, p.Message, p.PinnedByUser))
+                .ToList();
+        }
+
+        private async Task EnsureCanPinAsync(Guid userId, Chatroom chatroom)
+        {
+            var member = await _unitOfWork.ChatroomMemberRepository
+                .GetActiveMemberAsync(chatroom.ChatroomId, userId);
+            if (member is null)
+                throw new UnauthorizedAccessException("Bạn không phải là thành viên của phòng chat này.");
+
+            if (string.Equals(chatroom.RoomType, "direct", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (string.Equals(member.MemberRole, "admin", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var canPin = await _unitOfWork.MemberPermissionRepository
+                .HasPermissionAsync(userId, chatroom.ChatroomId, PermissionType.CanPinMessages);
+            if (!canPin)
+                throw new UnauthorizedAccessException("Bạn không có quyền ghim tin nhắn trong nhóm này.");
+        }
+
+        private static PinnedMessageResponse ToPinnedResponse(
+            PinnedMessage pin,
+            Message message,
+            User? pinnedBy)
+        {
+            return new PinnedMessageResponse
+            {
+                PinnedMessageId = pin.PinnedMessageId,
+                ChatroomId = pin.ChatroomId,
+                MessageId = pin.MessageId,
+                MessageType = message.MessageType,
+                MessageText = message.IsDeleted == true
+                    ? "Tin nhắn đã bị xóa"
+                    : message.MessageText ?? string.Empty,
+                SenderId = message.SenderId ?? Guid.Empty,
+                SenderFullname = message.Sender?.Fullname
+                    ?? message.Sender?.Username
+                    ?? string.Empty,
+                PinnedByUserId = pin.PinnedByUserId,
+                PinnedByName = pinnedBy?.Fullname ?? pinnedBy?.Username ?? string.Empty,
+                PinnedAt = pin.PinnedAt
+            };
         }
 
     }

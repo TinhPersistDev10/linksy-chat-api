@@ -64,6 +64,21 @@ public static class HubErrors
     public static HubException ParentMessageDeleted()
         => Create(HubErrorCodes.ParentMessageDeleted, "Không thể trả lời tin nhắn đã bị xóa.");
 
+    // ─── Pin ──────────────────────────────────────────────────────────────
+    public static HubException MessagePinForbidden()
+        => Create(HubErrorCodes.MessagePinForbidden, "Bạn không có quyền ghim tin nhắn.");
+
+    public static HubException MessagePinFailed()
+        => Create(HubErrorCodes.MessagePinFailed, "Không thể ghim tin nhắn.");
+
+    public static HubException MessageUnpinFailed()
+        => Create(HubErrorCodes.MessageUnpinFailed, "Không thể bỏ ghim tin nhắn.");
+
+    public static HubException MessageAlreadyPinned()
+        => Create(HubErrorCodes.MessageAlreadyPinned, "Tin nhắn đã được ghim.");
+
+    public static HubException MessageNotPinned()
+        => Create(HubErrorCodes.MessageNotPinned, "Tin nhắn chưa được ghim.");
 
     // ─── Call ─────────────────────────────────────────────────────────────
     public static HubException CallNotFound()

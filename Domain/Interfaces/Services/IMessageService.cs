@@ -12,6 +12,17 @@ namespace linksy_backend_api.Core.Interfaces.Services
     {
         Task<MessageResponse> SendMessageAsync(Guid userId, SendMessageRequest messageDto);
         Task<IEnumerable<MessageResponse>> GetMessagesAsync(Guid userId, Guid chatroomId, int page = 1, int pageSize = 50);
+        Task<(List<MessageResponse> Messages, bool HasMoreBefore)> GetMessagesAroundAsync(
+            Guid userId,
+            Guid chatroomId,
+            Guid messageId,
+            int beforeCount = 20,
+            int afterCount = 15);
+        Task<(List<MessageResponse> Messages, bool HasMore)> GetMessagesBeforeAsync(
+            Guid userId,
+            Guid chatroomId,
+            Guid beforeMessageId,
+            int pageSize = 50);
         Task DeleteMessageAsync(Guid userId, Guid messageId);
         Task<MessageResponse> EditMessageAsync(Guid userId, Guid messageId, string newText);
         Task MarkMessageAsReadAsync(Guid userId, Guid chatroomId, Guid messageId);
@@ -20,6 +31,10 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task<List<MessageResponse>> GetRepliesAsync(Guid userId, Guid messageId);
         Task CreateMessageNotificationsAsync(Message message, Guid senderId);
         Task<UploadAttachmentResponse> UploadAttachmentAsync(Guid userId, Guid chatroomId, IFormFile file, string attachmentType);
+
+        Task<PinnedMessageResponse> PinMessageAsync(Guid userId, Guid messageId);
+        Task UnpinMessageAsync(Guid userId, Guid messageId);
+        Task<List<PinnedMessageResponse>> GetPinnedMessagesAsync(Guid userId, Guid chatroomId);
 
         /// <summary>
         /// Persists a call summary as a real chat message (messageType "call_log") so it survives

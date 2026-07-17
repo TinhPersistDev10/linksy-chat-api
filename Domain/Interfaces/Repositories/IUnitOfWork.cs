@@ -28,6 +28,7 @@ namespace linksy_backend_api.Repositories.IRepositories
         IRepository<MessageReaction> MessageReactions { get; }
         IRepository<MessageDelivery> MessageDeliveries { get; }
         IRepository<MessageMention> MessageMentions { get; }
+        IRepository<PinnedMessage> PinnedMessages { get; }
         #endregion
 
         #region Call repositories

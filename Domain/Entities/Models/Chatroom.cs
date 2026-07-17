@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using linksy_backend_api.Domain.Entities.Models;
 
 namespace linksy_backend_api.Models;
 
@@ -40,4 +41,6 @@ public partial class Chatroom
     public virtual ICollection<Message> Messages { get; set; } = new List<Message>();
 
     public virtual ICollection<ChatroomMember> ChatroomMembers { get; set; } = new List<ChatroomMember>();
+
+    public virtual ICollection<PinnedMessage> PinnedMessages { get; set; } = new List<PinnedMessage>();
 }

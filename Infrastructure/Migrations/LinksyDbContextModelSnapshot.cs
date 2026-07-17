@@ -350,6 +350,43 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.ToTable("message_mentions", (string)null);
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.PinnedMessage", b =>
+                {
+                    b.Property<Guid>("PinnedMessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pinned_message_id");
+
+                    b.Property<Guid>("ChatroomId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("chatroom_id");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<DateTime>("PinnedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("pinned_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("PinnedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pinned_by_user_id");
+
+                    b.HasKey("PinnedMessageId")
+                        .HasName("pinned_messages_pkey");
+
+                    b.HasIndex(new[] { "ChatroomId", "MessageId" }, "pinned_messages_chatroom_id_message_id_key")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "ChatroomId", "PinnedAt" }, "pinned_messages_chatroom_id_pinned_at_idx");
+
+                    b.HasIndex(new[] { "MessageId" }, "pinned_messages_message_id_idx");
+
+                    b.ToTable("pinned_messages", (string)null);
+                });
+
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
                 {
                     b.Property<Guid>("ReactionId")
@@ -1519,6 +1556,36 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("MentionedUser");
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.PinnedMessage", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.Chatroom", "Chatroom")
+                        .WithMany("PinnedMessages")
+                        .HasForeignKey("ChatroomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("pinned_messages_chatroom_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.Message", "Message")
+                        .WithMany("PinnedMessages")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("pinned_messages_message_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "PinnedByUser")
+                        .WithMany("PinnedMessages")
+                        .HasForeignKey("PinnedByUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("pinned_messages_pinned_by_user_id_fkey");
+
+                    b.Navigation("Chatroom");
+
+                    b.Navigation("Message");
+
+                    b.Navigation("PinnedByUser");
+                });
+
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
                 {
                     b.HasOne("linksy_backend_api.Models.Message", "Message")
@@ -1820,6 +1887,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("GroupInvitations");
 
                     b.Navigation("Messages");
+
+                    b.Navigation("PinnedMessages");
                 });
 
             modelBuilder.Entity("linksy_backend_api.Models.ChatroomMember", b =>
@@ -1840,6 +1909,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("MessageMentions");
 
                     b.Navigation("MessageReactions");
+
+                    b.Navigation("PinnedMessages");
                 });
 
             modelBuilder.Entity("linksy_backend_api.Models.Role", b =>
@@ -1876,6 +1947,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("MessageReactions");
 
                     b.Navigation("Messages");
+
+                    b.Navigation("PinnedMessages");
 
                     b.Navigation("NotificationSettings");
 
