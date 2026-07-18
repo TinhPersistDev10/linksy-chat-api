@@ -333,25 +333,6 @@ namespace linksy_backend_api.Hubs
                     userId.Value,
                     messageId,
                     new ToggleReactionRequest { EmojiCode = emojiCode });
-
-                // #region agent log
-                try
-                {
-                    var line = System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        sessionId = "50b092",
-                        hypothesisId = "H2",
-                        location = "ChatHub.ToggleReaction",
-                        message = "ToggleReaction succeeded",
-                        data = new { messageId, emojiCode, userId },
-                        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                    });
-                    await System.IO.File.AppendAllTextAsync(
-                        @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
-                        line + Environment.NewLine);
-                }
-                catch { /* debug log only */ }
-                // #endregion
             }
             catch (HubException) { throw; }
             catch (KeyNotFoundException) { throw HubErrors.MessageNotFound(); }

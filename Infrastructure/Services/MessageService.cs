@@ -135,26 +135,6 @@ namespace linksy_backend_api.Infrastructure.Services
                 result.Add(response);
             }
 
-            // #region agent log
-            try
-            {
-                var withReactions = result.Count(m => m.Reactions.Count > 0);
-                var line = JsonSerializer.Serialize(new
-                {
-                    sessionId = "50b092",
-                    hypothesisId = "H1",
-                    location = "MessageService.MapMessagesWithDeliveriesAsync",
-                    message = "Mapped messages with reactions",
-                    data = new { messageCount = result.Count, withReactions, reactionRows = reactionsByMessage.Sum(kv => kv.Value.Count) },
-                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                });
-                await File.AppendAllTextAsync(
-                    @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
-                    line + Environment.NewLine);
-            }
-            catch { /* debug log only */ }
-            // #endregion
-
             return result;
         }
 

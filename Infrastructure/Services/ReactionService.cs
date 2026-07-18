@@ -83,7 +83,9 @@ namespace linksy_backend_api.Infrastructure.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            // Broadcast realtime update to all chatroom members
+            // Broadcast realtime update to all chatroom members.
+            // Send the summary list directly (not MessageReactionsResponse wrapper)
+            // so clients can assign event.reactions onto MessageResponse.reactions.
             var reactionsResponse = await GetMessageReactionsAsync(userId, messageId);
             await _hubContext.Clients
                 .Group(message.ChatroomId.ToString())
@@ -94,34 +96,9 @@ namespace linksy_backend_api.Infrastructure.Services
                     UserId = userId,
                     EmojiCode = request.EmojiCode,
                     Added = added,
-                    Reactions = reactionsResponse
+                    Reactions = reactionsResponse.Reactions,
+                    TotalCount = reactionsResponse.TotalCount
                 });
-
-            // #region agent log
-            try
-            {
-                var line = System.Text.Json.JsonSerializer.Serialize(new
-                {
-                    sessionId = "50b092",
-                    hypothesisId = "H3",
-                    location = "ReactionService.ToggleReactionAsync",
-                    message = "Reaction toggled",
-                    data = new
-                    {
-                        messageId,
-                        chatroomId = message.ChatroomId,
-                        emojiCode = request.EmojiCode,
-                        added,
-                        totalCount = reactionsResponse.TotalCount
-                    },
-                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                });
-                await System.IO.File.AppendAllTextAsync(
-                    @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
-                    line + Environment.NewLine);
-            }
-            catch { /* debug log only */ }
-            // #endregion
 
             return new ApiResponseDto
             {
@@ -204,30 +181,6 @@ namespace linksy_backend_api.Infrastructure.Services
             TotalCount = list.Count
         };
     }
-
-            // #region agent log
-            try
-            {
-                var line = System.Text.Json.JsonSerializer.Serialize(new
-                {
-                    sessionId = "50b092",
-                    hypothesisId = "H4",
-                    location = "ReactionService.GetBatchReactionsAsync",
-                    message = "Batch reactions loaded",
-                    data = new
-                    {
-                        requested = messageIds.Count,
-                        returned = result.Count,
-                        withReactions = result.Count(kv => kv.Value.TotalCount > 0)
-                    },
-                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                });
-                await System.IO.File.AppendAllTextAsync(
-                    @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
-                    line + Environment.NewLine);
-            }
-            catch { /* debug log only */ }
-            // #endregion
 
             return result;
         }
