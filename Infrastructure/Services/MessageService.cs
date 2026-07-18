@@ -17,6 +17,7 @@ using linksy_backend_api.Domain.Entities.Models;
 using linksy_backend_api.Domain.DTOs.Responses.MessageAttachment;
 using linksy_backend_api.Domain.DTOs.Responses.Calls;
 using linksy_backend_api.Domain.Interfaces.Repositories;
+using linksy_backend_api.Domain.DTOs.Responses.Reactions;
 using System.Text.Json;
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -64,26 +65,9 @@ namespace linksy_backend_api.Infrastructure.Services
                 throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
 
             var messages = await _unitOfWork.MessageRepository.GetChatroomMessagesAsync(chatroomId, page, pageSize);
-
-            var messageIds = messages.Select(message => message.MessageId).ToArray();
-            var deliveries = messageIds.Length == 0
-                ? new List<MessageDelivery>()
-                : await _unitOfWork.MessageDeliveryRepository.GetByMessageIdsAsync(messageIds);
-            var deliveriesByMessage = deliveries
-                .GroupBy(delivery => delivery.MessageId)
-                .ToDictionary(group => group.Key, group => group.ToList());
-
-            var result = new List<MessageResponse>();
-            foreach (var message in messages)
-            {
-                var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
-                deliveriesByMessage.TryGetValue(message.MessageId, out var messageDeliveries);
-                ApplyDeliverySummary(response, messageDeliveries ?? new());
-                result.Add(response);
-            }
-
-            result.Reverse();
-            return result;
+            // Repo trả newest-first; đảo thành oldest→newest cho UI.
+            messages.Reverse();
+            return await MapMessagesWithDeliveriesAsync(messages, userId);
         }
 
         public async Task<(List<MessageResponse> Messages, bool HasMoreBefore)> GetMessagesAroundAsync(
@@ -137,6 +121,7 @@ namespace linksy_backend_api.Infrastructure.Services
             var deliveriesByMessage = deliveries
                 .GroupBy(delivery => delivery.MessageId)
                 .ToDictionary(group => group.Key, group => group.ToList());
+            var reactionsByMessage = await LoadReactionsByMessageIdsAsync(messageIds, userId);
 
             var result = new List<MessageResponse>(messages.Count);
             foreach (var message in messages)
@@ -144,8 +129,31 @@ namespace linksy_backend_api.Infrastructure.Services
                 var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
                 deliveriesByMessage.TryGetValue(message.MessageId, out var messageDeliveries);
                 ApplyDeliverySummary(response, messageDeliveries ?? new());
+                response.Reactions = reactionsByMessage.TryGetValue(message.MessageId, out var reactions)
+                    ? reactions
+                    : new List<ReactionSummaryResponse>();
                 result.Add(response);
             }
+
+            // #region agent log
+            try
+            {
+                var withReactions = result.Count(m => m.Reactions.Count > 0);
+                var line = JsonSerializer.Serialize(new
+                {
+                    sessionId = "50b092",
+                    hypothesisId = "H1",
+                    location = "MessageService.MapMessagesWithDeliveriesAsync",
+                    message = "Mapped messages with reactions",
+                    data = new { messageCount = result.Count, withReactions, reactionRows = reactionsByMessage.Sum(kv => kv.Value.Count) },
+                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                });
+                await File.AppendAllTextAsync(
+                    @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
+                    line + Environment.NewLine);
+            }
+            catch { /* debug log only */ }
+            // #endregion
 
             return result;
         }
@@ -304,6 +312,7 @@ namespace linksy_backend_api.Infrastructure.Services
                     message.MessageId);
             }
             var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
+            response.Reactions ??= new List<ReactionSummaryResponse>();
             var newMessageDeliveries = await _unitOfWork.MessageDeliveryRepository
                 .GetByMessageAsync(message.MessageId);
             ApplyDeliverySummary(response, newMessageDeliveries);
@@ -854,6 +863,7 @@ namespace linksy_backend_api.Infrastructure.Services
             return Task.WhenAll(tasks);
         }
 
+        //Helper methods
         private static void ApplyDeliverySummary(
             MessageResponse response,
             IEnumerable<MessageDelivery> deliveries)
@@ -863,6 +873,40 @@ namespace linksy_backend_api.Infrastructure.Services
             response.DeliveredCount = summary.DeliveredCount;
             response.ReadCount = summary.ReadCount;
             response.DeliveryStatus = summary.DeliveryStatus;
+        }
+        private static List<ReactionSummaryResponse> BuildReactionSummaries(
+            IEnumerable<MessageReaction> reactions,
+            Guid currentUserId)
+        {
+            return reactions
+                .GroupBy(r => r.EmojiCode)
+                .Select(g => new ReactionSummaryResponse
+                {
+                    EmojiCode = g.Key,
+                    Count = g.Count(),
+                    ReactedByMe = g.Any(r => r.UserId == currentUserId),
+                    Users = g.Select(r => new ReactionUserResponse
+                    {
+                        UserId = r.UserId,
+                        Username = r.User?.Username ?? string.Empty,
+                        Avatar = r.User?.Avatar
+                    }).ToList()
+                })
+                .OrderByDescending(r => r.Count)
+                .ToList();
+        }
+
+        private async Task<Dictionary<Guid, List<ReactionSummaryResponse>>> LoadReactionsByMessageIdsAsync(
+            Guid[] messageIds,
+            Guid currentUserId)
+        {
+            if (messageIds.Length == 0)
+                return new Dictionary<Guid, List<ReactionSummaryResponse>>();
+
+            var all = await _unitOfWork.MessageReactionRepository.GetByMessageIdsAsync(messageIds);
+            return all
+                .GroupBy(r => r.MessageId)
+                .ToDictionary(g => g.Key, g => BuildReactionSummaries(g, currentUserId));
         }
 
         private static MessageDeliverySummaryEvent BuildDeliverySummary(
@@ -887,7 +931,7 @@ namespace linksy_backend_api.Infrastructure.Services
                         : "sent"
             };
         }
-
+        
         private async Task BroadcastMessageDeliveredAsync(MessageDeliveredEvent deliveredEvent)
         {
             try

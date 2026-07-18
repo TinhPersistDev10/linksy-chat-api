@@ -97,6 +97,32 @@ namespace linksy_backend_api.Infrastructure.Services
                     Reactions = reactionsResponse
                 });
 
+            // #region agent log
+            try
+            {
+                var line = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    sessionId = "50b092",
+                    hypothesisId = "H3",
+                    location = "ReactionService.ToggleReactionAsync",
+                    message = "Reaction toggled",
+                    data = new
+                    {
+                        messageId,
+                        chatroomId = message.ChatroomId,
+                        emojiCode = request.EmojiCode,
+                        added,
+                        totalCount = reactionsResponse.TotalCount
+                    },
+                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                });
+                await System.IO.File.AppendAllTextAsync(
+                    @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
+                    line + Environment.NewLine);
+            }
+            catch { /* debug log only */ }
+            // #endregion
+
             return new ApiResponseDto
             {
                 Success = true,
@@ -138,16 +164,70 @@ namespace linksy_backend_api.Infrastructure.Services
             };
         }
 
-        public async Task<Dictionary<Guid, MessageReactionsResponse>> GetBatchReactionsAsync(
-            Guid userId,
-            List<Guid> messageIds)
-        {
-            var result = new Dictionary<Guid, MessageReactionsResponse>();
+       public async Task<Dictionary<Guid, MessageReactionsResponse>> GetBatchReactionsAsync(
+    Guid userId,
+    List<Guid> messageIds)
+{
+    var all = await _unitOfWork.MessageReactionRepository
+        .GetByMessageIdsAsync(messageIds);
 
-            foreach (var messageId in messageIds)
+    var byMessage = all.GroupBy(r => r.MessageId);
+
+    var result = new Dictionary<Guid, MessageReactionsResponse>();
+
+    foreach (var id in messageIds.Distinct())
+    {
+        var group = byMessage.FirstOrDefault(g => g.Key == id);
+        var list = group?.ToList() ?? new List<MessageReaction>();
+
+        var summaries = list
+            .GroupBy(r => r.EmojiCode)
+            .Select(g => new ReactionSummaryResponse
             {
-                result[messageId] = await GetMessageReactionsAsync(userId, messageId);
+                EmojiCode = g.Key,
+                Count = g.Count(),
+                ReactedByMe = g.Any(r => r.UserId == userId),
+                Users = g.Select(r => new ReactionUserResponse
+                {
+                    UserId = r.UserId,
+                    Username = r.User?.Username ?? string.Empty,
+                    Avatar = r.User?.Avatar
+                }).ToList()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        result[id] = new MessageReactionsResponse
+        {
+            MessageId = id,
+            Reactions = summaries,
+            TotalCount = list.Count
+        };
+    }
+
+            // #region agent log
+            try
+            {
+                var line = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    sessionId = "50b092",
+                    hypothesisId = "H4",
+                    location = "ReactionService.GetBatchReactionsAsync",
+                    message = "Batch reactions loaded",
+                    data = new
+                    {
+                        requested = messageIds.Count,
+                        returned = result.Count,
+                        withReactions = result.Count(kv => kv.Value.TotalCount > 0)
+                    },
+                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                });
+                await System.IO.File.AppendAllTextAsync(
+                    @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
+                    line + Environment.NewLine);
             }
+            catch { /* debug log only */ }
+            // #endregion
 
             return result;
         }

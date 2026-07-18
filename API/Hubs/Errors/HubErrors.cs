@@ -80,6 +80,16 @@ public static class HubErrors
     public static HubException MessageNotPinned()
         => Create(HubErrorCodes.MessageNotPinned, "Tin nhắn chưa được ghim.");
 
+    // ─── Reaction ─────────────────────────────────────────────────────────
+    public static HubException MessageReactionForbidden()
+        => Create(HubErrorCodes.MessageReactionForbidden, "Bạn không có quyền thả cảm xúc tin nhắn này.");
+
+    public static HubException MessageReactionFailed()
+        => Create(HubErrorCodes.MessageReactionFailed, "Không thể cập nhật cảm xúc tin nhắn.");
+
+    public static HubException MessageAlreadyReacted()
+        => Create(HubErrorCodes.MessageAlreadyReacted, "Bạn đã thả cảm xúc này rồi.");
+
     // ─── Call ─────────────────────────────────────────────────────────────
     public static HubException CallNotFound()
         => Create(HubErrorCodes.CallNotFound, "Không tìm thấy cuộc gọi.");

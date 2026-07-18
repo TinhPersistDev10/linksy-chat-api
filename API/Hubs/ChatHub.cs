@@ -13,6 +13,7 @@ using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using linksy_backend_api.Domain.Entities.Models;
+using linksy_backend_api.Domain.DTOs.Requests.Reacions;
 
 namespace linksy_backend_api.Hubs
 {
@@ -20,6 +21,7 @@ namespace linksy_backend_api.Hubs
     public class ChatHub : Hub
     {
         private readonly IMessageService _messageService;
+        private readonly IReactionService _reactionService;
         private readonly IConnectionManager _connectionManager;
         private readonly IChatroomAccessService _chatroomAccessService;
         private readonly ICallService _callService;
@@ -28,6 +30,7 @@ namespace linksy_backend_api.Hubs
         public ChatHub(
             IChatroomService chatService,
             IMessageService messageService,
+            IReactionService reactionService,
             IConnectionManager connectionManager,
             IChatroomAccessService chatroomAccessService,
             ICallService callService,
@@ -37,6 +40,7 @@ namespace linksy_backend_api.Hubs
             _chatroomAccessService = chatroomAccessService;
             _logger = logger;
             _messageService = messageService;
+            _reactionService = reactionService;
             _callService = callService;
         }
         public override async Task OnConnectedAsync()
@@ -317,6 +321,46 @@ namespace linksy_backend_api.Hubs
             {
                 _logger.LogError(ex, "Error unpinning MessageId={MessageId}, UserId={UserId}", messageId, userId);
                 throw HubErrors.MessageUnpinFailed();
+            }
+        }
+        public async Task ToggleReaction(Guid messageId, string emojiCode)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _reactionService.ToggleReactionAsync(
+                    userId.Value,
+                    messageId,
+                    new ToggleReactionRequest { EmojiCode = emojiCode });
+
+                // #region agent log
+                try
+                {
+                    var line = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        sessionId = "50b092",
+                        hypothesisId = "H2",
+                        location = "ChatHub.ToggleReaction",
+                        message = "ToggleReaction succeeded",
+                        data = new { messageId, emojiCode, userId },
+                        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    });
+                    await System.IO.File.AppendAllTextAsync(
+                        @"d:\dotnet\chat_realtime\.cursor\debug-50b092.log",
+                        line + Environment.NewLine);
+                }
+                catch { /* debug log only */ }
+                // #endregion
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException) { throw HubErrors.MessageNotFound(); }
+            catch (UnauthorizedAccessException) { throw HubErrors.MessageReactionForbidden(); }
+            catch (InvalidOperationException) { throw HubErrors.MessageAlreadyDeleted(); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error toggling reaction for MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw HubErrors.MessageReactionFailed();
             }
         }
 

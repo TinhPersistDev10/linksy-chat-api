@@ -22,6 +22,9 @@ public static class HubErrorCodes
     public const string MessageUnpinFailed = "MESSAGE_UNPIN_FAILED";
     public const string MessageAlreadyPinned = "MESSAGE_ALREADY_PINNED";
     public const string MessageNotPinned = "MESSAGE_NOT_PINNED";
+    public const string MessageReactionForbidden = "MESSAGE_REACTION_FORBIDDEN";
+    public const string MessageReactionFailed = "MESSAGE_REACTION_FAILED";
+    public const string MessageAlreadyReacted = "MESSAGE_ALREADY_REACTED";
 
     //Call
     // Thêm vào cuối HubErrorCodes.cs
