@@ -77,5 +77,17 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 .Select(g => new { Emoji = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Emoji, x => x.Count, cancellationToken);
         }
+        public async Task<List<MessageReaction>> GetByMessageIdsAsync(
+            IEnumerable<Guid> messageIds,
+            CancellationToken cancellationToken = default)
+        {
+            var ids = messageIds.Distinct().ToList();
+            if(ids.Count == 0) return new List<MessageReaction>();
+            return await _context.MessageReactions
+                .Include(r => r.User)
+                .Where(r => ids.Contains(r.MessageId))
+                .OrderBy(r => r.ReactedAt)
+                .ToListAsync(cancellationToken);
+        }
     }
 }

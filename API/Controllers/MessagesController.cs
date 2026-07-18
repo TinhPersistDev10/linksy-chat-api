@@ -44,13 +44,37 @@ namespace linksy_backend_api.Controllers
         public async Task<IActionResult> GetMessages(
             Guid chatroomId,
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 50)
+            [FromQuery] int pageSize = 50,
+            [FromQuery] Guid? beforeMessageId = null)
         {
             try
             {
-                if (page < 1) page = 1;
                 if (pageSize < 1) pageSize = 50;
                 if (pageSize > 100) pageSize = 100; // hard cap
+
+                if (beforeMessageId.HasValue)
+                {
+                    var (beforeMessages, hasMoreBefore) = await _messageService.GetMessagesBeforeAsync(
+                        CurrentUserId,
+                        chatroomId,
+                        beforeMessageId.Value,
+                        pageSize);
+
+                    return Ok(new ApiResponseDto
+                    {
+                        Success = true,
+                        Message = "Messages retrieved",
+                        Data = new
+                        {
+                            Messages = beforeMessages,
+                            Page = 0,
+                            PageSize = pageSize,
+                            HasMore = hasMoreBefore
+                        }
+                    });
+                }
+
+                if (page < 1) page = 1;
 
                 var messages = await _messageService.GetMessagesAsync(CurrentUserId, chatroomId, page, pageSize);
                 return Ok(new ApiResponseDto
@@ -73,6 +97,87 @@ namespace linksy_backend_api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting messages for chatroom {ChatroomId}", chatroomId);
+                return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+        }
+
+        [HttpGet("{chatroomId:guid}/around/{messageId:guid}")]
+        [ProducesResponseType(typeof(ApiResponseDto), 200)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetMessagesAround(
+            Guid chatroomId,
+            Guid messageId,
+            [FromQuery] int before = 20,
+            [FromQuery] int after = 15)
+        {
+            try
+            {
+                if (before < 0) before = 0;
+                if (after < 0) after = 0;
+                if (before > 50) before = 50;
+                if (after > 50) after = 50;
+
+                var (messages, hasMoreBefore) = await _messageService.GetMessagesAroundAsync(
+                    CurrentUserId,
+                    chatroomId,
+                    messageId,
+                    before,
+                    after);
+
+                return Ok(new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "Messages around target retrieved",
+                    Data = new
+                    {
+                        Messages = messages,
+                        HasMoreBefore = hasMoreBefore,
+                        TargetMessageId = messageId
+                    }
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Error getting messages around {MessageId} in chatroom {ChatroomId}",
+                    messageId,
+                    chatroomId);
+                return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+        }
+
+        [HttpGet("{chatroomId:guid}/pinned")]
+        [ProducesResponseType(typeof(ApiResponseDto), 200)]
+        [ProducesResponseType(403)]
+        public async Task<IActionResult> GetPinnedMessages(Guid chatroomId)
+        {
+            try
+            {
+                var pinned = await _messageService.GetPinnedMessagesAsync(CurrentUserId, chatroomId);
+                return Ok(new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "Pinned messages retrieved",
+                    Data = pinned
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting pinned messages for chatroom {ChatroomId}", chatroomId);
                 return StatusCode(500, new ApiResponseDto { Success = false, Message = ex.Message });
             }
         }

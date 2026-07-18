@@ -14,5 +14,8 @@ namespace linksy_backend_api.DTOs.MessagesDTOs
 
         public Guid? ParentMessageId { get; set; } // For replies
         public List<SendMessageAttachmentRequest>? Attachments { get; set; }
+
+        /// <summary>User IDs mentioned via @ in group messages.</summary>
+        public List<Guid>? Mentions { get; set; }
     }
 }

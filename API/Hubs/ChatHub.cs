@@ -13,6 +13,7 @@ using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using linksy_backend_api.Domain.Entities.Models;
+using linksy_backend_api.Domain.DTOs.Requests.Reacions;
 
 namespace linksy_backend_api.Hubs
 {
@@ -20,6 +21,7 @@ namespace linksy_backend_api.Hubs
     public class ChatHub : Hub
     {
         private readonly IMessageService _messageService;
+        private readonly IReactionService _reactionService;
         private readonly IConnectionManager _connectionManager;
         private readonly IChatroomAccessService _chatroomAccessService;
         private readonly ICallService _callService;
@@ -28,6 +30,7 @@ namespace linksy_backend_api.Hubs
         public ChatHub(
             IChatroomService chatService,
             IMessageService messageService,
+            IReactionService reactionService,
             IConnectionManager connectionManager,
             IChatroomAccessService chatroomAccessService,
             ICallService callService,
@@ -37,6 +40,7 @@ namespace linksy_backend_api.Hubs
             _chatroomAccessService = chatroomAccessService;
             _logger = logger;
             _messageService = messageService;
+            _reactionService = reactionService;
             _callService = callService;
         }
         public override async Task OnConnectedAsync()
@@ -255,6 +259,89 @@ namespace linksy_backend_api.Hubs
                 _logger.LogError(ex,
                     "Error marking MessageId={MessageId} as read", messageId);
                 throw HubErrors.MarkAsReadFailed();
+            }
+        }
+
+        public async Task PinMessage(Guid messageId)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _messageService.PinMessageAsync(userId.Value, messageId);
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException)
+            {
+                throw HubErrors.MessageNotFound();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw HubErrors.MessagePinForbidden();
+            }
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("đã được ghim", StringComparison.OrdinalIgnoreCase))
+            {
+                throw HubErrors.MessageAlreadyPinned();
+            }
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("đã xóa", StringComparison.OrdinalIgnoreCase))
+            {
+                throw HubErrors.MessageAlreadyDeleted();
+            }
+            catch (InvalidOperationException)
+            {
+                throw HubErrors.MessagePinFailed();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error pinning MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw HubErrors.MessagePinFailed();
+            }
+        }
+
+        public async Task UnpinMessage(Guid messageId)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _messageService.UnpinMessageAsync(userId.Value, messageId);
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException)
+            {
+                throw HubErrors.MessageNotPinned();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw HubErrors.MessagePinForbidden();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error unpinning MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw HubErrors.MessageUnpinFailed();
+            }
+        }
+        public async Task ToggleReaction(Guid messageId, string emojiCode)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _reactionService.ToggleReactionAsync(
+                    userId.Value,
+                    messageId,
+                    new ToggleReactionRequest { EmojiCode = emojiCode });
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException) { throw HubErrors.MessageNotFound(); }
+            catch (UnauthorizedAccessException) { throw HubErrors.MessageReactionForbidden(); }
+            catch (InvalidOperationException) { throw HubErrors.MessageAlreadyDeleted(); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error toggling reaction for MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw HubErrors.MessageReactionFailed();
             }
         }
 
@@ -732,7 +819,7 @@ namespace linksy_backend_api.Hubs
         /// scenario) without going through the initial IncomingCall/AnswerCall
         /// handshake, e.g. a participant who missed the initial ring rejoining.
         /// </summary>
-        public async Task JoinCall(Guid callLogId)
+        public async Task<CallLogDto> JoinCall(Guid callLogId)
         {
             try
             {
@@ -751,6 +838,10 @@ namespace linksy_backend_api.Hubs
                         JoinedBy = userId
                     });
                 }
+
+                // Return the fresh call state (including AnsweredAt) so the joining
+                // client can align its call timer with the shared server timestamp.
+                return dto;
             }
             catch (HubException) { throw; }
             catch (Exception ex)

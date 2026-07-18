@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using linksy_backend_api.Domain.DTOs.Responses.Messages;
+using linksy_backend_api.Domain.DTOs.Responses.Reactions;
 
 namespace linksy_backend_api.DTOs.MessagesDTOs
 {
@@ -34,5 +35,7 @@ namespace linksy_backend_api.DTOs.MessagesDTOs
         public int DeliveredCount { get; set; }
         public int ReadCount { get; set; }
         public List<MediaAttachmentResponseDto>? Attachments { get; set; }
+        public List<MentionDto>? Mentions { get; set; }
+        public List<ReactionSummaryResponse> Reactions { get; set; } = new();
     }
 }

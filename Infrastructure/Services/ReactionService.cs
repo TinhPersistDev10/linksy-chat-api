@@ -83,7 +83,9 @@ namespace linksy_backend_api.Infrastructure.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            // Broadcast realtime update to all chatroom members
+            // Broadcast realtime update to all chatroom members.
+            // Send the summary list directly (not MessageReactionsResponse wrapper)
+            // so clients can assign event.reactions onto MessageResponse.reactions.
             var reactionsResponse = await GetMessageReactionsAsync(userId, messageId);
             await _hubContext.Clients
                 .Group(message.ChatroomId.ToString())
@@ -94,7 +96,8 @@ namespace linksy_backend_api.Infrastructure.Services
                     UserId = userId,
                     EmojiCode = request.EmojiCode,
                     Added = added,
-                    Reactions = reactionsResponse
+                    Reactions = reactionsResponse.Reactions,
+                    TotalCount = reactionsResponse.TotalCount
                 });
 
             return new ApiResponseDto
@@ -138,16 +141,46 @@ namespace linksy_backend_api.Infrastructure.Services
             };
         }
 
-        public async Task<Dictionary<Guid, MessageReactionsResponse>> GetBatchReactionsAsync(
-            Guid userId,
-            List<Guid> messageIds)
-        {
-            var result = new Dictionary<Guid, MessageReactionsResponse>();
+       public async Task<Dictionary<Guid, MessageReactionsResponse>> GetBatchReactionsAsync(
+    Guid userId,
+    List<Guid> messageIds)
+{
+    var all = await _unitOfWork.MessageReactionRepository
+        .GetByMessageIdsAsync(messageIds);
 
-            foreach (var messageId in messageIds)
+    var byMessage = all.GroupBy(r => r.MessageId);
+
+    var result = new Dictionary<Guid, MessageReactionsResponse>();
+
+    foreach (var id in messageIds.Distinct())
+    {
+        var group = byMessage.FirstOrDefault(g => g.Key == id);
+        var list = group?.ToList() ?? new List<MessageReaction>();
+
+        var summaries = list
+            .GroupBy(r => r.EmojiCode)
+            .Select(g => new ReactionSummaryResponse
             {
-                result[messageId] = await GetMessageReactionsAsync(userId, messageId);
-            }
+                EmojiCode = g.Key,
+                Count = g.Count(),
+                ReactedByMe = g.Any(r => r.UserId == userId),
+                Users = g.Select(r => new ReactionUserResponse
+                {
+                    UserId = r.UserId,
+                    Username = r.User?.Username ?? string.Empty,
+                    Avatar = r.User?.Avatar
+                }).ToList()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        result[id] = new MessageReactionsResponse
+        {
+            MessageId = id,
+            Reactions = summaries,
+            TotalCount = list.Count
+        };
+    }
 
             return result;
         }

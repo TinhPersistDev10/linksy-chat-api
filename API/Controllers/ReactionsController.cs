@@ -108,7 +108,7 @@ namespace linksy_backend_api.API.Controllers
         // ─────────────────────────────────────────────────────────────────────
 
         /// <summary>Lấy reactions cho nhiều messages cùng lúc (batch query).</summary>
-        [HttpPost("/api/messages/reactions/batch")]
+        [HttpPost("/api/v1/messages/reactions/batch")]
         [ProducesResponseType(typeof(ApiResponseDto), 200)]
         public async Task<IActionResult> GetBatchReactions([FromBody] List<Guid> messageIds)
         {

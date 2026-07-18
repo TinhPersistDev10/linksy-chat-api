@@ -42,4 +42,6 @@ public partial class Message
     public virtual ICollection<MessageAttachment> MessageAttachments { get; set; } = new List<MessageAttachment>();
     public virtual ICollection<MessageReaction> MessageReactions { get; set; } = new List<MessageReaction>();
     public virtual ICollection<MessageDelivery> MessageDeliveries { get; set; } = new List<MessageDelivery>();
+    public virtual ICollection<MessageMention> MessageMentions { get; set; } = new List<MessageMention>();
+    public virtual ICollection<PinnedMessage> PinnedMessages { get; set; } = new List<PinnedMessage>();
 }

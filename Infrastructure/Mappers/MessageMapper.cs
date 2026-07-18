@@ -31,6 +31,49 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 })
                 .ToListAsync();
 
+            var mentionEntities = await unitOfWork.MessageMentions
+                .Query()
+                .Where(m => m.MessageId == message.MessageId)
+                .Include(m => m.MentionedUser)
+                .ToListAsync();
+
+            Dictionary<Guid, string> nicknameByUserId = new();
+            if (mentionEntities.Count > 0)
+            {
+                var mentionedUserIds = mentionEntities.Select(x => x.MentionedUserId).ToList();
+                var memberNicknames = await unitOfWork.ChatroomMembers
+                    .Query()
+                    .Where(m => m.ChatroomId == message.ChatroomId
+                        && m.LeftAt == null
+                        && mentionedUserIds.Contains(m.UserId)
+                        && m.Nickname != null
+                        && m.Nickname != "")
+                    .Select(m => new { m.UserId, m.Nickname })
+                    .ToListAsync();
+
+                nicknameByUserId = memberNicknames
+                    .ToDictionary(m => m.UserId, m => m.Nickname!);
+            }
+
+            var mentions = mentionEntities.Select(m =>
+            {
+                var user = m.MentionedUser;
+                var displayName = nicknameByUserId.TryGetValue(m.MentionedUserId, out var nickname)
+                    ? nickname
+                    : user?.Fullname ?? user?.Username ?? string.Empty;
+
+                return new MentionDto
+                {
+                    UserId = m.MentionedUserId,
+                    DisplayName = displayName,
+                    AvatarUrl = DefaultAvatarHelper.GetAvatarOrDefault(
+                        user?.Avatar,
+                        user?.UserId,
+                        username: user?.Username,
+                        fullname: user?.Fullname)
+                };
+            }).ToList();
+
             // Parent message
             MessageResponse? parentMessageDto = null;
             if (message.ParentMessageId.HasValue)
@@ -100,7 +143,8 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 SentAt = message.SentAt ?? DateTime.UtcNow,
                 EditedAt = message.EditedAt,
                 DeletedAt = message.DeletedAt,
-                Attachments = attachments.Count > 0 ? attachments : null
+                Attachments = attachments.Count > 0 ? attachments : null,
+                Mentions = mentions.Count > 0 ? mentions : null
             };
         }
     }
