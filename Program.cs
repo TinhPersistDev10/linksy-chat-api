@@ -483,4 +483,27 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
 
+// Dev-only: unlock accounts locked by failed login attempts
+if (args.Contains("--unlock-locked-users") && app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<LinksyDbContext>();
+    var now = DateTime.UtcNow;
+    var locked = await db.Users
+        .Where(u => u.AccountLockedUntil != null && u.AccountLockedUntil > now)
+        .ToListAsync();
+
+    foreach (var user in locked)
+    {
+        user.FailedLoginAttempts = 0;
+        user.AccountLockedUntil = null;
+    }
+
+    await db.SaveChangesAsync();
+    Console.WriteLine($"Unlocked {locked.Count} user(s).");
+    foreach (var user in locked)
+        Console.WriteLine($"  - {user.Username} ({user.Email})");
+    return;
+}
+
 app.Run();

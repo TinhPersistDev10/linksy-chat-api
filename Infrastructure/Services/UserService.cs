@@ -8,6 +8,7 @@ using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Infrastructure.Mappers;
 using linksy_backend_api.Repositories.IRepositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -43,7 +44,13 @@ namespace linksy_backend_api.Infrastructure.Services
                     var user = await _unitOfWork.UserRepository.GetByIdAsNoTrackingAsync(userId)
                         ?? throw new KeyNotFoundException("User not found");
 
-                    return UserMapper.ToResponse(user);
+                    var roles = await _unitOfWork.UserRoles.Query()
+                        .Where(ur => ur.UserId == userId)
+                        .Include(ur => ur.Role)
+                        .Select(ur => ur.Role.RoleName)
+                        .ToListAsync();
+
+                    return UserMapper.ToResponse(user, roles);
                 }, CacheKeys.MediumTtl);
 
             }

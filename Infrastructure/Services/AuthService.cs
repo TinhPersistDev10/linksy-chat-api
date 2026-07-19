@@ -8,6 +8,8 @@ using linksy_backend_api.Core.DTOs.Responses.Auth;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.Auth;
 using linksy_backend_api.DTOs.UserDTO;
+using linksy_backend_api.Domain.Interfaces.Services;
+using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
@@ -20,12 +22,19 @@ namespace linksy_backend_api.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IEmailService _emailService;
         private readonly IJwtService _jwtService;
+        private readonly ICacheService _cache;
         private readonly ILogger<AuthService> _logger;
-        public AuthService(IUnitOfWork unitOfWork, IEmailService emailService, IJwtService jwtService, ILogger<AuthService> logger)
+        public AuthService(
+            IUnitOfWork unitOfWork,
+            IEmailService emailService,
+            IJwtService jwtService,
+            ICacheService cache,
+            ILogger<AuthService> logger)
         {
             _unitOfWork = unitOfWork;
             _emailService = emailService;
             _jwtService = jwtService;
+            _cache = cache;
             _logger = logger;
         }   
 
@@ -73,8 +82,14 @@ namespace linksy_backend_api.Services
                 Message = "OTP đã được gửi đến email của bạn"
             };
         }
-        private UserInfoDto MapToUserInfo(User user)
+        private async Task<UserInfoDto> MapToUserInfoAsync(User user)
         {
+            var roles = await _unitOfWork.UserRoles.Query()
+                .Where(ur => ur.UserId == user.UserId)
+                .Include(ur => ur.Role)
+                .Select(ur => ur.Role.RoleName)
+                .ToListAsync();
+
             return new UserInfoDto
             {
                 UserId = user.UserId,
@@ -87,7 +102,8 @@ namespace linksy_backend_api.Services
                 IsActive = user.IsActive ?? false,
                 IsEmailVerified = user.IsEmailVerified ?? false,
                 CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
-                LastLoginAt = user.LastLoginAt ?? DateTime.UtcNow
+                LastLoginAt = user.LastLoginAt,
+                Roles = roles
             };
         }
 
@@ -149,6 +165,9 @@ namespace linksy_backend_api.Services
             user.LastLoginAt = DateTime.UtcNow;
             user.UpdatedAt = DateTime.UtcNow;
 
+            await _cache.RemoveAsync(CacheKeys.UserProfile(user.UserId));
+            await _cache.RemoveAsync(CacheKeys.UserRoles(user.UserId));
+
             //Clean up token cu
             await _unitOfWork.TokenRepository.CleanupExpiredAsync(user.UserId);
             // Tạo tokens
@@ -176,7 +195,7 @@ namespace linksy_backend_api.Services
                 RefreshToken = refreshToken,
                 ExpiresAt = expiresAt,
                 RefreshTokenExpiresAt = refreshExpiresAt,
-                User = MapToUserInfo(user)
+                User = await MapToUserInfoAsync(user)
             };
         }
 
@@ -534,7 +553,7 @@ namespace linksy_backend_api.Services
                     RefreshToken = refreshToken,
                     ExpiresAt = expiresAt,
                     RefreshTokenExpiresAt = refreshExpiresAt,
-                    User = MapToUserInfo(user)
+                    User = await MapToUserInfoAsync(user)
                 };
             }
             catch (System.Exception ex)
