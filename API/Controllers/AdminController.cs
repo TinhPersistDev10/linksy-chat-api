@@ -197,12 +197,15 @@ namespace linksy_backend_api.API.Controllers
                 });
             }
 
-            if (string.IsNullOrWhiteSpace(dto.NewPassword) || dto.NewPassword.Length < 6)
+            if (string.IsNullOrWhiteSpace(dto.NewPassword) ||
+                dto.NewPassword.Length < 8 ||
+                !dto.NewPassword.Any(char.IsLetter) ||
+                !dto.NewPassword.Any(char.IsDigit))
             {
                 return BadRequest(new ApiResponseDto
                 {
                     Success = false,
-                    Message = "Password must be at least 6 characters",
+                    Message = "Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ và số",
                     Data = null ?? new ApiResponseDto
                     { Success = false, Message = "Reset Password error" }
                 });

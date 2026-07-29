@@ -17,15 +17,16 @@ namespace linksy_backend_api.DTOs
         public string Email { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Password là bắt buộc")]
-        [StringLength(100, MinimumLength = 6, ErrorMessage = "Password phải từ 6-100 ký tự")]
-        public string Password { get; set; }= string.Empty;
+        [StringLength(100, MinimumLength = 8, ErrorMessage = "Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ và số")]
+        [RegularExpression(@"^(?=.*[A-Za-z])(?=.*\d).+$", ErrorMessage = "Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ và số")]
+        public string Password { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Confirm Password là bắt buộc")]
         [Compare("Password", ErrorMessage = "Password không khớp")]
-        public string ConfirmPassword { get; set; }= string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
 
         [StringLength(100)]
-        public string Fullname { get; set; }= string.Empty;
+        public string Fullname { get; set; } = string.Empty;
 
         public DateOnly? DateOfBirth { get; set; }
     }

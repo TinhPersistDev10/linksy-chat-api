@@ -266,8 +266,9 @@ namespace linksy_backend_api.Services
                 string.IsNullOrWhiteSpace(request.Password)
                 )
                 throw new Exception("Email và Username không được để trống");
-            if (request.Password.Length < 6)
-                throw new Exception("Mật khẩu phải có ít nhất 6 ký tự");
+
+            EnsurePasswordPolicy(request.Password);
+            EnsureDateOfBirthPolicy(request.DateOfBirth);
 
             // Kiểm tra email đã tồn tại
             var existingUser = await _unitOfWork.Users.FirstOrDefaultAsync(u =>
@@ -394,6 +395,34 @@ namespace linksy_backend_api.Services
             return hashedBytes;
         }
 
+        private static void EnsurePasswordPolicy(string password)
+        {
+            if (string.IsNullOrWhiteSpace(password) ||
+                password.Length < 8 ||
+                !password.Any(char.IsLetter) ||
+                !password.Any(char.IsDigit))
+            {
+                throw new Exception("Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ và số");
+            }
+        }
+
+        private static void EnsureDateOfBirthPolicy(DateOnly? dateOfBirth)
+        {
+            if (!dateOfBirth.HasValue) return;
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (dateOfBirth.Value > today)
+                throw new Exception("Ngày sinh không được ở tương lai");
+
+            var minAgeBirthDate = today.AddYears(-13);
+            if (dateOfBirth.Value > minAgeBirthDate)
+                throw new Exception("Bạn phải từ 13 tuổi trở lên");
+
+            var maxAgeBirthDate = today.AddYears(-120);
+            if (dateOfBirth.Value < maxAgeBirthDate)
+                throw new Exception("Ngày sinh không hợp lệ");
+        }
+
         private string GenerateOtp()
         {
             using var rng = RandomNumberGenerator.Create();
@@ -462,6 +491,8 @@ namespace linksy_backend_api.Services
 
             if (otp.Attempts >= otp.MaxAttempts)
                 throw new Exception("Đã vượt quá số lần thử");
+
+            EnsurePasswordPolicy(request.NewPassword);
 
             otp.Attempts++;
 
@@ -585,6 +616,8 @@ namespace linksy_backend_api.Services
 
                 if (request.NewPassword != request.ConfirmPassword)
                     throw new Exception("Mật khẩu mới và xác nhận mật khẩu không khớp");
+
+                EnsurePasswordPolicy(request.NewPassword);
 
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
                 user.UpdatedAt = DateTime.UtcNow;
