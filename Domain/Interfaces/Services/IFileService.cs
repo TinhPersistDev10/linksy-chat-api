@@ -7,7 +7,7 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task<string> UploadAvatarAsync(IFormFile file, string folder = "avatars");
         Task<bool> DeleteAvatarAsync(string avatarUrl);
         bool IsValidImage(IFormFile file);
-        Task<byte[]> ProcessImageAsync(IFormFile file, int maxWidth = 400, int maxHeight = 400);
+        Task<byte[]> ProcessImageAsync(IFormFile file, int maxWidth = 400, int maxHeight = 400, int jpegQuality = 85);
         Task<UploadAttachmentResponse> UploadMessageAttachmentAsync(
             IFormFile file,
             string attachmentType,

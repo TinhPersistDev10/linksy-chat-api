@@ -268,7 +268,9 @@ namespace linksy_backend_api.Services
                 throw new Exception("Email và Username không được để trống");
 
             EnsurePasswordPolicy(request.Password);
-            EnsureDateOfBirthPolicy(request.DateOfBirth);
+            ProfileValidationHelper.EnsureDateOfBirth(request.DateOfBirth);
+            if (!string.IsNullOrWhiteSpace(request.Username))
+                ProfileValidationHelper.EnsureUsername(request.Username);
 
             // Kiểm tra email đã tồn tại
             var existingUser = await _unitOfWork.Users.FirstOrDefaultAsync(u =>
@@ -404,23 +406,6 @@ namespace linksy_backend_api.Services
             {
                 throw new Exception("Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ và số");
             }
-        }
-
-        private static void EnsureDateOfBirthPolicy(DateOnly? dateOfBirth)
-        {
-            if (!dateOfBirth.HasValue) return;
-
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            if (dateOfBirth.Value > today)
-                throw new Exception("Ngày sinh không được ở tương lai");
-
-            var minAgeBirthDate = today.AddYears(-13);
-            if (dateOfBirth.Value > minAgeBirthDate)
-                throw new Exception("Bạn phải từ 13 tuổi trở lên");
-
-            var maxAgeBirthDate = today.AddYears(-120);
-            if (dateOfBirth.Value < maxAgeBirthDate)
-                throw new Exception("Ngày sinh không hợp lệ");
         }
 
         private string GenerateOtp()

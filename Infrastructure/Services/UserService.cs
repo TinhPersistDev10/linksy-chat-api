@@ -74,9 +74,14 @@ namespace linksy_backend_api.Infrastructure.Services
             if (!string.IsNullOrWhiteSpace(updateUserDto.Username)
                 && updateUserDto.Username != user.Username)
             {
-                bool taken = await _unitOfWork.UserRepository.IsUsernameExistsAsync(updateUserDto.Username, userId);
+                ProfileValidationHelper.EnsureUsername(updateUserDto.Username);
 
-                if (taken) { throw new InvalidOperationException("User already taken"); }
+                bool taken = await _unitOfWork.UserRepository.IsUsernameExistsAsync(
+                    updateUserDto.Username.Trim(), userId);
+
+                if (taken)
+                    throw new InvalidOperationException("Username đã được sử dụng");
+
                 user.Username = updateUserDto.Username.Trim();
             }
             if (!string.IsNullOrWhiteSpace(updateUserDto.Email)
@@ -84,20 +89,23 @@ namespace linksy_backend_api.Infrastructure.Services
             {
                 bool taken = await _unitOfWork.UserRepository.IsEmailExistsAsync(updateUserDto.Email, userId);
                 if (taken)
-                    throw new InvalidOperationException("Email already taken");
-                user.Email = updateUserDto.Email;
+                    throw new InvalidOperationException("Email đã được sử dụng");
+                user.Email = updateUserDto.Email.Trim();
                 user.IsEmailVerified = false;
                 user.EmailVerifiedAt = null;
             }
             // Nullable fields: only overwrite when caller supplies a value
             if (updateUserDto.Fullname is not null)
-                user.Fullname = updateUserDto.Fullname;
+                user.Fullname = ProfileValidationHelper.NormalizeFullname(updateUserDto.Fullname);
 
             if (updateUserDto.Bio is not null)
-                user.Bio = updateUserDto.Bio;
+                user.Bio = ProfileValidationHelper.NormalizeBio(updateUserDto.Bio);
 
             if (updateUserDto.DateOfBirth.HasValue)
+            {
+                ProfileValidationHelper.EnsureDateOfBirth(updateUserDto.DateOfBirth);
                 user.DateOfBirth = updateUserDto.DateOfBirth.Value;
+            }
 
             if (updateUserDto.IsActive.HasValue)
                 user.IsActive = updateUserDto.IsActive.Value;

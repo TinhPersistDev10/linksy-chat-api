@@ -10,6 +10,7 @@ namespace linksy_backend_api.DTOs
     {
         [Required(ErrorMessage = "Username là bắt buộc")]
         [StringLength(50, MinimumLength = 3, ErrorMessage = "Username phải từ 3-50 ký tự")]
+        [RegularExpression(@"^[a-zA-Z0-9_]+$", ErrorMessage = "Username chỉ được chứa chữ, số và dấu gạch dưới")]
         public string Username { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Email là bắt buộc")]
@@ -25,7 +26,7 @@ namespace linksy_backend_api.DTOs
         [Compare("Password", ErrorMessage = "Password không khớp")]
         public string ConfirmPassword { get; set; } = string.Empty;
 
-        [StringLength(100)]
+        [StringLength(100, MinimumLength = 2, ErrorMessage = "Họ và tên phải từ 2-100 ký tự")]
         public string Fullname { get; set; } = string.Empty;
 
         public DateOnly? DateOfBirth { get; set; }

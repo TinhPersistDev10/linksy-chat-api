@@ -25,8 +25,8 @@ namespace linksy_backend_api.Infrastructure.Helpers
             var colorIndex = Math.Abs(userId.GetHashCode()) % colors.Length;
             var bgColor = colors[colorIndex];
             return $"https://res.cloudinary.com/{CloudiaryName}/image/upload/" +
-                    $"w_200,h_200,c_fill,b_rgb:{bgColor}/" +
-                    $"l_text:Roboto_80_bold:{initial},co_white,g_center/" +
+                    $"w_800,h_800,c_fill,b_rgb:{bgColor}/" +
+                    $"l_text:Roboto_320_bold:{initial},co_white,g_center/" +
                     $"blank_a3thk2.png";
         }
         public static string GetDefaultUserAvatar(Guid userId, string? username = null, string? fullname = null)
