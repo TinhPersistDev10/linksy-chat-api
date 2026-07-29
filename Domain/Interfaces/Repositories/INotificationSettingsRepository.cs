@@ -7,5 +7,6 @@ namespace linksy_backend_api.Domain.Interfaces.Repositories
     {
         Task<NotificationSettings?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<NotificationSettings> GetOrCreateAsync(Guid userId, CancellationToken cancellationToken = default);
+        Task<List<NotificationSettings>> GetByUserIdsAsync(IEnumerable<Guid> userIds, CancellationToken cancellationToken = default);
     }
 }

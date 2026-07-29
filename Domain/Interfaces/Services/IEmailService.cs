@@ -9,5 +9,6 @@ namespace linksy_backend_api.Services
     {
         Task SendOtpEmailAsync(string toEmail, string username, string otp, string purpose);
         Task SendWelcomeEmailAsync(string toEmail, string username);
+        Task SendNotificationEmailAsync(string toEmail, string username, string title, string body);
     }
 }
