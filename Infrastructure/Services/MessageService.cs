@@ -739,6 +739,13 @@ namespace linksy_backend_api.Infrastructure.Services
                     userId,
                     PermissionType.CanSendFiles);
             }
+            else if (attachmentType == "audio")
+            {
+                await _chatroomAccessService.EnsurePermissionAsync(
+                    chatroomId,
+                    userId,
+                    PermissionType.CanSendVoice);
+            }
             else
             {
                 throw new ArgumentException("Invalid attachment type.");
