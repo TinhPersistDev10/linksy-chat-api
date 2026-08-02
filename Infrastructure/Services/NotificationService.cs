@@ -311,6 +311,9 @@ namespace linksy_backend_api.Infrastructure.Services
                     "image" => "Đã gửi một ảnh",
                     "file" => "Đã gửi một file",
                     "voice" or "audio" => "Đã gửi tin nhắn thoại",
+                    "poll" => string.IsNullOrWhiteSpace(message.MessageText)
+                        ? "Đã tạo một bình chọn"
+                        : $"Bình chọn: {message.MessageText}",
                     _ => message.MessageText ?? string.Empty
                 };
 

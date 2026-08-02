@@ -17,5 +17,8 @@ namespace linksy_backend_api.DTOs.MessagesDTOs
 
         /// <summary>User IDs mentioned via @ in group messages.</summary>
         public List<Guid>? Mentions { get; set; }
+
+        /// <summary>Required when MessageType is "poll" (group chats only).</summary>
+        public CreatePollRequest? Poll { get; set; }
     }
 }

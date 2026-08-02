@@ -41,6 +41,9 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<MessageDelivery> MessageDeliveries { get; set; }
     public virtual DbSet<MessageMention> MessageMentions { get; set; }
     public virtual DbSet<PinnedMessage> PinnedMessages { get; set; }
+    public virtual DbSet<MessagePoll> MessagePolls { get; set; }
+    public virtual DbSet<MessagePollOption> MessagePollOptions { get; set; }
+    public virtual DbSet<MessagePollVote> MessagePollVotes { get; set; }
     // Thêm vào LinksyDbContext.cs
     public virtual DbSet<CallLog> CallLogs { get; set; }
     public virtual DbSet<CallParticipant> CallParticipants { get; set; }
@@ -84,6 +87,9 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new MessageDeliveryConfiguration());
         modelBuilder.ApplyConfiguration(new MessageMentionConfiguration());
         modelBuilder.ApplyConfiguration(new PinnedMessageConfiguration());
+        modelBuilder.ApplyConfiguration(new MessagePollConfiguration());
+        modelBuilder.ApplyConfiguration(new MessagePollOptionConfiguration());
+        modelBuilder.ApplyConfiguration(new MessagePollVoteConfiguration());
 
         // Trong OnModelCreating:
         modelBuilder.ApplyConfiguration(new CallLogConfiguration());
