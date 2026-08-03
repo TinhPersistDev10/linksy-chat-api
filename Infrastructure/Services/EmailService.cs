@@ -518,6 +518,53 @@ namespace linksy_backend_api.Services
             await SendEmailAsync(toEmail, subject, body);
         }
 
+        async Task IEmailService.SendNotificationEmailAsync(
+            string toEmail,
+            string username,
+            string title,
+            string body)
+        {
+            var subject = $"Linksy — {title}";
+            var html = GetNotificationEmailTemplate(username, title, body);
+            await SendEmailAsync(toEmail, subject, html);
+        }
+
+        private static object GetNotificationEmailTemplate(string username, string title, string body)
+        {
+            var safeUsername = System.Net.WebUtility.HtmlEncode(username);
+            var safeTitle = System.Net.WebUtility.HtmlEncode(title);
+            var safeBody = System.Net.WebUtility.HtmlEncode(body);
+
+            return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Linksy — Thông báo</title>
+</head>
+<body style='margin:0;padding:0;background:#f0f4f8;font-family:Arial,sans-serif;'>
+    <div style='padding:40px 20px;'>
+        <div style='max-width:560px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(24,95,165,0.10);'>
+            <div style='background:linear-gradient(135deg,#185FA5 0%,#378ADD 100%);padding:28px 40px;text-align:center;'>
+                <div style='color:#fff;font-size:20px;font-weight:700;'>Linksy</div>
+                <div style='color:rgba(255,255,255,0.75);font-size:13px;margin-top:4px;'>Thông báo</div>
+            </div>
+            <div style='background:#fff;padding:32px 40px;'>
+                <p style='margin:0 0 16px;color:#333;'>Xin chào <strong>{safeUsername}</strong>,</p>
+                <h2 style='margin:0 0 12px;color:#185FA5;font-size:18px;'>{safeTitle}</h2>
+                <p style='margin:0;color:#555;line-height:1.6;'>{safeBody}</p>
+                <p style='margin:28px 0 0;color:#888;font-size:13px;'>Bạn nhận email này vì đã bật thông báo email trong cài đặt Linksy.</p>
+            </div>
+            <div style='background:#f8fafc;padding:16px 40px;text-align:center;color:#94a3b8;font-size:12px;'>
+                © {DateTime.UtcNow.Year} Linksy Chat
+            </div>
+        </div>
+    </div>
+</body>
+</html>";
+        }
+
         private object GetWelcomeEmailTemplate(string username)
         {
             return $@"

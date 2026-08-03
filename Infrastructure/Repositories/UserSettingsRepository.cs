@@ -62,6 +62,19 @@ namespace linksy_backend_api.Infrastructure.Repositories
             await _context.NotificationSettings.AddAsync(settings, ct);
             return settings;
         }
+
+        public async Task<List<NotificationSettings>> GetByUserIdsAsync(
+            IEnumerable<Guid> userIds,
+            CancellationToken ct = default)
+        {
+            var ids = userIds.Distinct().ToList();
+            if (ids.Count == 0) return [];
+
+            return await _context.NotificationSettings
+                .AsNoTracking()
+                .Where(s => ids.Contains(s.UserId))
+                .ToListAsync(ct);
+        }
     }
 
     // ── PrivacySettings ───────────────────────────────────────────────────────

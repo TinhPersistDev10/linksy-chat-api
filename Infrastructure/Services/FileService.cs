@@ -43,7 +43,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 if (!IsValidImage(file))
                     throw new InvalidOperationException("File không hợp lệ");
 
-                var processedImage = await ProcessImageAsync(file);
+                var processedImage = await ProcessImageAsync(file, 1024, 1024, 92);
                 using var stream = new MemoryStream(processedImage);
 
                 // ── Dùng tên file unique để tránh conflict ──────────────────────
@@ -55,10 +55,10 @@ namespace linksy_backend_api.Infrastructure.Services
                     PublicId = publicId,          // ← explicit publicId, bỏ Folder
                     Overwrite = true,
                     Transformation = new Transformation()
-                        .Width(400).Height(400)
+                        .Width(1024).Height(1024)
                         .Crop("fill")
                         .Gravity("face")
-                        .Quality("auto:good")
+                        .Quality("auto:best")
                         .FetchFormat("auto"),
                     // ← KHÔNG đặt UploadPreset nếu dùng API Key/Secret (signed upload)
                 };
@@ -150,7 +150,7 @@ namespace linksy_backend_api.Infrastructure.Services
             return true;
         }
 
-        public async Task<byte[]> ProcessImageAsync(IFormFile file, int maxWidth = 400, int maxHeight = 400)
+        public async Task<byte[]> ProcessImageAsync(IFormFile file, int maxWidth = 400, int maxHeight = 400, int jpegQuality = 85)
         {
             using var image = await Image.LoadAsync(file.OpenReadStream());
 
@@ -168,7 +168,7 @@ namespace linksy_backend_api.Infrastructure.Services
             using var output = new MemoryStream();
             await image.SaveAsJpegAsync(output, new JpegEncoder
             {
-                Quality = 85 // Chất lượng 85%
+                Quality = jpegQuality
             });
 
             return output.ToArray();
@@ -189,6 +189,7 @@ namespace linksy_backend_api.Infrastructure.Services
             {
                 "image" => UploadMessageImageAsync(file, chatroomId),
                 "video" => UploadMessageVideoAsync(file, chatroomId),
+                "audio" => UploadMessageAudioAsync(file, chatroomId),
                 "file" => UploadMessageRawFileAsync(file, chatroomId),
                 _ => throw new ArgumentException("Invalid attachment type"),
             };
@@ -269,6 +270,49 @@ namespace linksy_backend_api.Infrastructure.Services
                     .FetchFormat("jpg"))
                 .BuildUrl(publicId + ".jpg");
         }
+
+        /// <summary>
+        /// Voice notes / audio clips. Cloudinary stores audio under the video resource type.
+        /// </summary>
+        public async Task<UploadAttachmentResponse> UploadMessageAudioAsync(
+            IFormFile file,
+            Guid chatroomId)
+        {
+            var publicId = $"linksy/messages/{chatroomId}/audio/{Guid.NewGuid()}";
+
+            await using var stream = file.OpenReadStream();
+
+            var uploadParams = new VideoUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                PublicId = publicId,
+                Overwrite = false
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+
+            if (result.Error != null)
+                throw new Exception($"Cloudinary upload error: {result.Error.Message}");
+
+            return new UploadAttachmentResponse
+            {
+                AttachmentType = "audio",
+                FileName = file.FileName,
+                CdnUrl = result.SecureUrl.ToString(),
+                FilePath = result.PublicId,
+                FileSize = result.Bytes,
+                MimeType = string.IsNullOrWhiteSpace(file.ContentType)
+                    ? "audio/webm"
+                    : file.ContentType,
+                ThumbnailUrl = null,
+                Width = null,
+                Height = null,
+                DurationMs = result.Duration > 0
+                    ? (int)(result.Duration * 1000)
+                    : null
+            };
+        }
+
         public async Task<UploadAttachmentResponse> UploadMessageRawFileAsync(
             IFormFile file,
             Guid chatroomId)
@@ -344,6 +388,32 @@ namespace linksy_backend_api.Infrastructure.Services
         ".mov"
     };
 
+            var audioTypes = new[]
+            {
+        "audio/webm",
+        "audio/ogg",
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/mp4",
+        "audio/m4a",
+        "audio/aac",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
+        "video/webm" // MediaRecorder often reports webm container with opus audio
+    };
+
+            var audioExtensions = new[]
+            {
+        ".webm",
+        ".ogg",
+        ".mp3",
+        ".m4a",
+        ".mp4",
+        ".aac",
+        ".wav"
+    };
+
             var fileTypes = new[]
             {
         "application/pdf",
@@ -399,6 +469,17 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 if (file.Length > 100 * 1024 * 1024)
                     throw new ArgumentException("Video file is too large.");
+            }
+            else if (attachmentType == "audio")
+            {
+                var isAudioContent =
+                    contentType.StartsWith("audio/") ||
+                    audioTypes.Contains(contentType);
+                if (!isAudioContent && !audioExtensions.Contains(extension))
+                    throw new ArgumentException("Invalid audio type.");
+
+                if (file.Length > 10 * 1024 * 1024)
+                    throw new ArgumentException("Audio file is too large.");
             }
             else if (attachmentType == "file")
             {

@@ -16,15 +16,30 @@ namespace linksy_backend_api.Infrastructure.Mappers
             IUnitOfWork unitOfWork)
         {
             var members = await unitOfWork.ChatroomMemberRepository.GetActiveMembersWithUserAsync(chatroom.ChatroomId);
+            var membersByUserId = members
+                .Where(m => m.LeftAt == null)
+                .GroupBy(m => m.UserId)
+                .ToDictionary(g => g.Key, g => g.First());
 
-            var memberDtos = members.Where(m => m.LeftAt == null).Select(m => new ChatroomMemberRequest
+            var memberDtos = members.Where(m => m.LeftAt == null).Select(m =>
             {
-                UserId = m.UserId,
-                Username = m.User?.Username ?? string.Empty,
-                Fullname = m.User?.Fullname ?? string.Empty,
-                Avatar = DefaultAvatarHelper.GetAvatarOrDefault(m.User?.Avatar, m.UserId, username: m.User?.Username, fullname: m.User?.Fullname),
-                MemberRole = m.MemberRole,
-                JoinedAt = m.JoinedAt ?? DateTime.UtcNow
+                ChatroomMember? addedByMember = null;
+                if (m.AddedBy.HasValue)
+                    membersByUserId.TryGetValue(m.AddedBy.Value, out addedByMember);
+
+                return new ChatroomMemberRequest
+                {
+                    UserId = m.UserId,
+                    Username = m.User?.Username ?? string.Empty,
+                    Fullname = m.User?.Fullname ?? string.Empty,
+                    Avatar = DefaultAvatarHelper.GetAvatarOrDefault(m.User?.Avatar, m.UserId, username: m.User?.Username, fullname: m.User?.Fullname),
+                    MemberRole = m.MemberRole,
+                    Nickname = m.Nickname,
+                    JoinedAt = m.JoinedAt ?? DateTime.UtcNow,
+                    AddedBy = m.AddedBy,
+                    AddedByUsername = addedByMember?.User?.Username,
+                    AddedByFullname = addedByMember?.User?.Fullname
+                };
             }).ToList();
 
             // Last message

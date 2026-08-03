@@ -2,6 +2,7 @@
 using linksy_backend_api.Domain.DTOs.Responses.Settings;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.DTOs;
+using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Repositories.IRepositories;
 
 namespace linksy_backend_api.Infrastructure.Services
@@ -10,11 +11,16 @@ namespace linksy_backend_api.Infrastructure.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<UserSettingsService> _logger;
+        private readonly ICacheService _cache;
 
-        public UserSettingsService(IUnitOfWork unitOfWork, ILogger<UserSettingsService> logger)
+        public UserSettingsService(
+            IUnitOfWork unitOfWork,
+            ILogger<UserSettingsService> logger,
+            ICacheService cache)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
+            _cache = cache;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -134,6 +140,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 _unitOfWork.NotificationSettingsRepo.Update(settings);
                 await _unitOfWork.SaveChangesAsync();
+                await _cache.RemoveAsync(CacheKeys.UserNotifSettings(userId));
 
                 return new ApiResponseDto
                 {

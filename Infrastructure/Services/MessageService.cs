@@ -18,6 +18,7 @@ using linksy_backend_api.Domain.DTOs.Responses.MessageAttachment;
 using linksy_backend_api.Domain.DTOs.Responses.Calls;
 using linksy_backend_api.Domain.Interfaces.Repositories;
 using linksy_backend_api.Domain.DTOs.Responses.Reactions;
+using linksy_backend_api.Domain.DTOs.Responses.Messages;
 using System.Text.Json;
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -30,6 +31,7 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly ICacheService _cache;
         private readonly INotificationService _messageNotificationService;
+        private readonly IPollService _pollService;
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
             _cacheLocks = new();
@@ -40,7 +42,8 @@ namespace linksy_backend_api.Infrastructure.Services
             IChatroomAccessService chatroomAccessService,
             IHubContext<ChatHub> hubContext,
             INotificationService messageNotificationService,
-            ICacheService cache)
+            ICacheService cache,
+            IPollService pollService)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
@@ -49,6 +52,7 @@ namespace linksy_backend_api.Infrastructure.Services
             _hubContext = hubContext;
             _messageNotificationService = messageNotificationService;
             _cache = cache;
+            _pollService = pollService;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -122,6 +126,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 .GroupBy(delivery => delivery.MessageId)
                 .ToDictionary(group => group.Key, group => group.ToList());
             var reactionsByMessage = await LoadReactionsByMessageIdsAsync(messageIds, userId);
+            var pollsByMessage = await _pollService.GetPollsByMessageIdsAsync(messageIds, userId);
 
             var result = new List<MessageResponse>(messages.Count);
             foreach (var message in messages)
@@ -132,6 +137,8 @@ namespace linksy_backend_api.Infrastructure.Services
                 response.Reactions = reactionsByMessage.TryGetValue(message.MessageId, out var reactions)
                     ? reactions
                     : new List<ReactionSummaryResponse>();
+                if (pollsByMessage.TryGetValue(message.MessageId, out var poll))
+                    response.Poll = poll;
                 result.Add(response);
             }
 
@@ -182,15 +189,19 @@ namespace linksy_backend_api.Infrastructure.Services
 
             var hasText = !string.IsNullOrWhiteSpace(messageDto.MessageText);
             var hasAttachments = messageDto.Attachments is not null && messageDto.Attachments.Any();
-            var allowedMessageTypes = new[] { "text", "image", "video", "file", "audio" };
+            var allowedMessageTypes = new[] { "text", "image", "video", "file", "audio", "poll" };
             if (messageDto.MessageType == "text" && !hasText)
                 throw new ArgumentException("Nội dung tin nhắn không được để trống.");
 
-            if (messageDto.MessageType != "text" && !hasAttachments)
+            if (messageDto.MessageType == "poll")
+            {
+                // poll payload validated below; no attachments required
+            }
+            else if (messageDto.MessageType != "text" && !hasAttachments)
                 throw new ArgumentException("Attachment is required.");
             if (!allowedMessageTypes.Contains(messageDto.MessageType))
                 throw new ArgumentException("MessageType không hợp lệ.");
-            if (messageDto.MessageText.Length > 5000)
+            if (messageDto.MessageType != "poll" && messageDto.MessageText.Length > 5000)
                 throw new ArgumentException(
                     "Tin nhắn không được vượt quá 5000 ký tự."
                 );
@@ -250,6 +261,36 @@ namespace linksy_backend_api.Infrastructure.Services
             var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(messageDto.ChatroomId)
                 ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");
 
+            List<string>? normalizedPollOptions = null;
+            if (messageDto.MessageType == "poll")
+            {
+                if (!string.Equals(chatroom.RoomType, "group", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException("Chỉ có thể tạo bình chọn trong nhóm chat.");
+
+                if (messageDto.Poll is null)
+                    throw new ArgumentException("Thiếu dữ liệu bình chọn.");
+
+                var question = messageDto.Poll.Question?.Trim() ?? string.Empty;
+                if (question.Length is < 1 or > 200)
+                    throw new ArgumentException("Câu hỏi bình chọn phải từ 1 đến 200 ký tự.");
+
+                normalizedPollOptions = (messageDto.Poll.Options ?? new List<string>())
+                    .Select(o => o?.Trim() ?? string.Empty)
+                    .Where(o => o.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (normalizedPollOptions.Count < 2 || normalizedPollOptions.Count > 10)
+                    throw new ArgumentException("Bình chọn cần từ 2 đến 10 lựa chọn.");
+
+                if (normalizedPollOptions.Any(o => o.Length > 100))
+                    throw new ArgumentException("Mỗi lựa chọn tối đa 100 ký tự.");
+
+                messageDto.MessageText = question;
+                messageDto.Attachments = null;
+                messageDto.Mentions = null;
+            }
+
             var validatedMentions = await ValidateMentionsAsync(
                 chatroom,
                 userId,
@@ -257,8 +298,22 @@ namespace linksy_backend_api.Infrastructure.Services
 
             await _unitOfWork.BeginTransactionAsync();
             Message message;
+            Message? pollAnnounceMessage = null;
             try
             {
+                if (messageDto.MessageType == "poll" && normalizedPollOptions is not null)
+                {
+                    var creator = await _unitOfWork.Users.GetByIdAsync(userId);
+                    var creatorName = creator?.Fullname ?? creator?.Username ?? "Ai đó";
+                    pollAnnounceMessage = await PersistMessageRecordAsync(
+                        messageDto.ChatroomId,
+                        userId,
+                        "system",
+                        $"{creatorName} đã tạo một bình chọn",
+                        parentMessageId: null,
+                        attachments: null);
+                }
+
                 message = await PersistMessageRecordAsync(
                     messageDto.ChatroomId,
                     userId,
@@ -267,6 +322,29 @@ namespace linksy_backend_api.Infrastructure.Services
                     messageDto.ParentMessageId,
                     messageDto.Attachments,
                     validatedMentions);
+
+                if (messageDto.MessageType == "poll" && normalizedPollOptions is not null)
+                {
+                    await _unitOfWork.MessagePolls.AddAsync(new MessagePoll
+                    {
+                        MessageId = message.MessageId,
+                        Question = messageDto.MessageText,
+                        IsClosed = false,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedByUserId = userId
+                    });
+
+                    for (var i = 0; i < normalizedPollOptions.Count; i++)
+                    {
+                        await _unitOfWork.MessagePollOptions.AddAsync(new MessagePollOption
+                        {
+                            OptionId = Guid.NewGuid(),
+                            MessageId = message.MessageId,
+                            Text = normalizedPollOptions[i],
+                            SortOrder = i
+                        });
+                    }
+                }
 
                 await _unitOfWork.CommitTransactionAsync();
             }
@@ -293,12 +371,22 @@ namespace linksy_backend_api.Infrastructure.Services
             }
             var response = await MessageMapper.ToResponseAsync(message, _unitOfWork, userId);
             response.Reactions ??= new List<ReactionSummaryResponse>();
+            if (string.Equals(message.MessageType, "poll", StringComparison.OrdinalIgnoreCase))
+                response.Poll = await _pollService.GetPollAsync(message.MessageId, userId);
             var newMessageDeliveries = await _unitOfWork.MessageDeliveryRepository
                 .GetByMessageAsync(message.MessageId);
             ApplyDeliverySummary(response, newMessageDeliveries);
             // await _cache.RemoveAsync(CacheKeys.Messages(messageDto.ChatroomId, 1, 50));
             await InvalidateChatroomListCacheAsync(
                 newMessageDeliveries.Select(delivery => delivery.UserId).Append(userId));
+
+            if (pollAnnounceMessage is not null)
+            {
+                var announceResponse = await MessageMapper.ToResponseAsync(
+                    pollAnnounceMessage, _unitOfWork, userId);
+                await BroadcastReceiveMessageAsync(announceResponse);
+            }
+
             await BroadcastReceiveMessageAsync(response);
 
             return response;
@@ -495,14 +583,71 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             try
             {
+                // Strip per-user poll flags before room broadcast so non-creators
+                // do not receive CanClose / VotedByMe from the sender's context.
+                var payload = response.Poll is null
+                    ? response
+                    : CloneMessageResponseForBroadcast(response);
+
                 await _hubContext.Clients
                     .Group(response.ChatroomId.ToString())
-                    .SendAsync("ReceiveMessage", response);
+                    .SendAsync("ReceiveMessage", payload);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SignalR broadcast failed for MessageId={MessageId}", response.MessageId);
             }
+        }
+
+        private static MessageResponse CloneMessageResponseForBroadcast(MessageResponse source)
+        {
+            return new MessageResponse
+            {
+                MessageId = source.MessageId,
+                ChatroomId = source.ChatroomId,
+                SenderId = source.SenderId,
+                SenderUsername = source.SenderUsername,
+                SenderFullname = source.SenderFullname,
+                SenderAvatar = source.SenderAvatar,
+                SenderNickname = source.SenderNickname,
+                MessageType = source.MessageType,
+                MessageText = source.MessageText,
+                ParentMessageId = source.ParentMessageId,
+                ParentMessage = source.ParentMessage,
+                IsEdited = source.IsEdited,
+                IsDeleted = source.IsDeleted,
+                IsOwn = false,
+                SentAt = source.SentAt,
+                EditedAt = source.EditedAt,
+                DeletedAt = source.DeletedAt,
+                DeliveryStatus = source.DeliveryStatus,
+                RecipientCount = source.RecipientCount,
+                DeliveredCount = source.DeliveredCount,
+                ReadCount = source.ReadCount,
+                Attachments = source.Attachments,
+                Mentions = source.Mentions,
+                Reactions = source.Reactions,
+                Poll = source.Poll is null
+                    ? null
+                    : new PollResponse
+                    {
+                        MessageId = source.Poll.MessageId,
+                        Question = source.Poll.Question,
+                        IsClosed = source.Poll.IsClosed,
+                        CreatedByUserId = source.Poll.CreatedByUserId,
+                        TotalVotes = source.Poll.TotalVotes,
+                        MyVotedOptionId = null,
+                        CanClose = false,
+                        Options = source.Poll.Options.Select(o => new PollOptionResponse
+                        {
+                            OptionId = o.OptionId,
+                            Text = o.Text,
+                            SortOrder = o.SortOrder,
+                            VoteCount = o.VoteCount,
+                            VotedByMe = false
+                        }).ToList()
+                    }
+            };
         }
 
         public async Task<MessageResponse> EditMessageAsync(Guid userId, Guid messageId, string newText)
@@ -738,6 +883,13 @@ namespace linksy_backend_api.Infrastructure.Services
                     chatroomId,
                     userId,
                     PermissionType.CanSendFiles);
+            }
+            else if (attachmentType == "audio")
+            {
+                await _chatroomAccessService.EnsurePermissionAsync(
+                    chatroomId,
+                    userId,
+                    PermissionType.CanSendVoice);
             }
             else
             {

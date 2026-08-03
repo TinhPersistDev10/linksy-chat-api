@@ -1,6 +1,7 @@
 using linksy_backend_api.Core.DTOs.Requests.Notifications;
 using linksy_backend_api.Core.DTOs.Responses.Notifications;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Entities.Models;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.Hubs;
@@ -8,6 +9,7 @@ using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Mappers;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
+using linksy_backend_api.Services;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.SignalR;
 
@@ -20,36 +22,66 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly ILogger<NotificationService> _logger;
         private readonly ICacheService _cache;
         private readonly IHubContext<ChatHub> _hubContext;
+        private readonly IEmailService _emailService;
+
         private record CountWrapper { public int Count { get; init; } }
+
+        private record NotifSettingsCache
+        {
+            public bool NotificationsEnabled { get; init; }
+            public bool NotificationSoundEnabled { get; init; }
+            public bool MessagePreviewEnabled { get; init; }
+            public bool EmailNotifications { get; init; }
+        }
+
         public NotificationService(
             IUnitOfWork unitOfWork,
             IConnectionManager connectionManager,
             ILogger<NotificationService> logger,
             ICacheService cache,
-            IHubContext<ChatHub> hubContext)
+            IHubContext<ChatHub> hubContext,
+            IEmailService emailService)
         {
             _unitOfWork = unitOfWork;
             _connectionManager = connectionManager;
             _hubContext = hubContext;
             _cache = cache;
             _logger = logger;
+            _emailService = emailService;
         }
 
         // ─────────────────────────────────────────────────────────────────────
         // CORE
         // ─────────────────────────────────────────────────────────────────────
 
-        public async Task<Notification> CreateNotificationAsync(CreateNotificationRequest request)
+        public async Task<Notification?> CreateNotificationAsync(CreateNotificationRequest request)
         {
             try
             {
+                var settings = await GetSettingsAsync(request.UserId);
+                if (!settings.NotificationsEnabled)
+                {
+                    _logger.LogDebug(
+                        "Skipped notification for user {UserId} (notifications disabled)",
+                        request.UserId);
+                    return null;
+                }
+
+                var body = request.Body;
+                if (!settings.MessagePreviewEnabled && IsMessageRelatedType(request.NotificationType))
+                {
+                    body = request.NotificationType == "mention"
+                        ? "Bạn được nhắc đến trong một cuộc trò chuyện"
+                        : "Bạn có thông báo mới";
+                }
+
                 var entity = new Notification
                 {
                     NotificationId = Guid.NewGuid(),
                     UserId = request.UserId,
                     NotificationType = request.NotificationType,
                     Title = request.Title,
-                    Body = request.Body,
+                    Body = body,
                     RelatedEntityId = request.RelatedEntityId,
                     RelatedEntityType = request.RelatedEntityType,
                     ActionUrl = request.ActionUrl,
@@ -63,6 +95,10 @@ namespace linksy_backend_api.Infrastructure.Services
                 await _unitOfWork.SaveChangesAsync();
                 await _cache.RemoveAsync(CacheKeys.NotifUnreadCount(request.UserId));
                 await SendRealTimeAsync(entity);
+
+                if (settings.EmailNotifications)
+                    await TrySendNotificationEmailAsync(entity);
+
                 return entity;
             }
             catch (Exception ex)
@@ -76,29 +112,56 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             try
             {
-                var entities = requests.Select(r => new Notification
+                if (requests.Count == 0) return;
+
+                var settingsMap = await GetSettingsMapAsync(requests.Select(r => r.UserId));
+                var entities = new List<Notification>();
+
+                foreach (var r in requests)
                 {
-                    NotificationId = Guid.NewGuid(),
-                    UserId = r.UserId,
-                    NotificationType = r.NotificationType,
-                    Title = r.Title,
-                    Body = r.Body,
-                    RelatedEntityId = r.RelatedEntityId,
-                    RelatedEntityType = r.RelatedEntityType,
-                    ActionUrl = r.ActionUrl,
-                    ImageUrl = r.ImageUrl,
-                    IsRead = false,
-                    IsDeleted = false,
-                    CreatedAt = DateTime.UtcNow
-                }).ToList();
+                    if (!settingsMap.TryGetValue(r.UserId, out var settings) || !settings.NotificationsEnabled)
+                        continue;
+
+                    var body = r.Body;
+                    if (!settings.MessagePreviewEnabled && IsMessageRelatedType(r.NotificationType))
+                    {
+                        body = r.NotificationType == "mention"
+                            ? "Bạn được nhắc đến trong một cuộc trò chuyện"
+                            : "Bạn có thông báo mới";
+                    }
+
+                    entities.Add(new Notification
+                    {
+                        NotificationId = Guid.NewGuid(),
+                        UserId = r.UserId,
+                        NotificationType = r.NotificationType,
+                        Title = r.Title,
+                        Body = body,
+                        RelatedEntityId = r.RelatedEntityId,
+                        RelatedEntityType = r.RelatedEntityType,
+                        ActionUrl = r.ActionUrl,
+                        ImageUrl = r.ImageUrl,
+                        IsRead = false,
+                        IsDeleted = false,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+
+                if (entities.Count == 0) return;
 
                 await _unitOfWork.Notifications.AddRangeAsync(entities);
                 await _unitOfWork.SaveChangesAsync();
-                var affectedUserIds = entities.Select(entity => entity.UserId).Distinct();
+
+                var affectedUserIds = entities.Select(entity => entity.UserId).Distinct().ToList();
                 await Task.WhenAll(affectedUserIds.Select(userId =>
                     _cache.RemoveAsync(CacheKeys.NotifUnreadCount(userId))));
-                var realtimeTasks = entities.Select(entity => SendRealTimeAsync(entity));
-                await Task.WhenAll(realtimeTasks);
+
+                await Task.WhenAll(entities.Select(entity => SendRealTimeAsync(entity)));
+
+                var emailTasks = entities
+                    .Where(e => settingsMap.TryGetValue(e.UserId, out var s) && s.EmailNotifications)
+                    .Select(TrySendNotificationEmailAsync);
+                await Task.WhenAll(emailTasks);
             }
             catch (Exception ex)
             {
@@ -248,15 +311,28 @@ namespace linksy_backend_api.Infrastructure.Services
                     "image" => "Đã gửi một ảnh",
                     "file" => "Đã gửi một file",
                     "voice" or "audio" => "Đã gửi tin nhắn thoại",
+                    "poll" => string.IsNullOrWhiteSpace(message.MessageText)
+                        ? "Đã tạo một bình chọn"
+                        : $"Bình chọn: {message.MessageText}",
                     _ => message.MessageText ?? string.Empty
                 };
 
+                var settingsMap = await GetSettingsMapAsync(recipientIds);
+
                 foreach (var recipientId in recipientIds)
                 {
+                    if (!settingsMap.TryGetValue(recipientId, out var settings))
+                        settings = DefaultSettings();
+
                     var isMention = mentionedSet.Contains(recipientId);
                     var notificationType = isMention ? "mention" : "new_message";
+                    var alertsEnabled = settings.NotificationsEnabled;
+                    var displayBody = !alertsEnabled || !settings.MessagePreviewEnabled
+                        ? "Tin nhắn mới"
+                        : previewBody;
 
-                    if (isMention)
+                    // Persist mention only when global notifications are on
+                    if (alertsEnabled && isMention)
                     {
                         try
                         {
@@ -265,7 +341,9 @@ namespace linksy_backend_api.Infrastructure.Services
                                 UserId = recipientId,
                                 NotificationType = "mention",
                                 Title = roomName,
-                                Body = $"{sender.Fullname ?? sender.Username} đã nhắc đến bạn",
+                                Body = settings.MessagePreviewEnabled
+                                    ? $"{sender.Fullname ?? sender.Username} đã nhắc đến bạn"
+                                    : "Bạn được nhắc đến trong một cuộc trò chuyện",
                                 RelatedEntityId = message.MessageId,
                                 RelatedEntityType = "message",
                                 ActionUrl = $"/chat/{chatroom.ChatroomId}?messageId={message.MessageId}",
@@ -282,8 +360,25 @@ namespace linksy_backend_api.Infrastructure.Services
                         }
                     }
 
+                    // Always tip the sidebar for unread; alerts/sound gated by flags
                     var connections = await _connectionManager.GetConnectionsAsync(recipientId);
                     if (!connections.Any()) continue;
+
+                    string body;
+                    if (!alertsEnabled || !settings.MessagePreviewEnabled)
+                    {
+                        body = isMention
+                            ? "Bạn được nhắc đến trong một cuộc trò chuyện"
+                            : "Tin nhắn mới";
+                    }
+                    else if (isMention)
+                    {
+                        body = $"{sender.Fullname ?? sender.Username} đã nhắc đến bạn: {previewBody}";
+                    }
+                    else
+                    {
+                        body = displayBody;
+                    }
 
                     await _hubContext.Clients.Clients(connections)
                         .SendAsync("ReceiveMessageNotification", new
@@ -294,10 +389,11 @@ namespace linksy_backend_api.Infrastructure.Services
                             SenderId = sender.UserId,
                             SenderName = sender.Fullname ?? sender.Username,
                             Title = roomName,
-                            Body = isMention
-                                ? $"{sender.Fullname ?? sender.Username} đã nhắc đến bạn: {previewBody}"
-                                : previewBody,
-                            SentAt = message.SentAt
+                            Body = body,
+                            SentAt = message.SentAt,
+                            AlertsEnabled = alertsEnabled,
+                            NotificationSoundEnabled = alertsEnabled && settings.NotificationSoundEnabled,
+                            MessagePreviewEnabled = alertsEnabled && settings.MessagePreviewEnabled
                         });
                 }
             }
@@ -388,7 +484,7 @@ namespace linksy_backend_api.Infrastructure.Services
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // REALTIME
+        // REALTIME / SETTINGS HELPERS
         // ─────────────────────────────────────────────────────────────────────
 
         private async Task SendRealTimeAsync(Notification notification)
@@ -403,6 +499,107 @@ namespace linksy_backend_api.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending realtime notification");
+            }
+        }
+
+        private async Task<NotifSettingsCache> GetSettingsAsync(Guid userId)
+        {
+            var cacheKey = CacheKeys.UserNotifSettings(userId);
+            var cached = await _cache.GetOrSetAsync(
+                cacheKey,
+                async () =>
+                {
+                    var settings = await _unitOfWork.NotificationSettingsRepository.GetOrCreateAsync(userId);
+                    await _unitOfWork.SaveChangesAsync();
+                    return ToCache(settings);
+                },
+                CacheKeys.MediumTtl);
+
+            return cached ?? DefaultSettings();
+        }
+
+        private async Task<Dictionary<Guid, NotifSettingsCache>> GetSettingsMapAsync(IEnumerable<Guid> userIds)
+        {
+            var ids = userIds.Distinct().ToList();
+            var result = new Dictionary<Guid, NotifSettingsCache>();
+            if (ids.Count == 0) return result;
+
+            var missing = new List<Guid>();
+            foreach (var id in ids)
+            {
+                var cached = await _cache.GetAsync<NotifSettingsCache>(CacheKeys.UserNotifSettings(id));
+                if (cached is not null)
+                    result[id] = cached;
+                else
+                    missing.Add(id);
+            }
+
+            if (missing.Count == 0) return result;
+
+            var existing = await _unitOfWork.NotificationSettingsRepository.GetByUserIdsAsync(missing);
+            var existingByUser = existing.ToDictionary(s => s.UserId);
+
+            foreach (var userId in missing)
+            {
+                NotifSettingsCache cacheItem;
+                if (existingByUser.TryGetValue(userId, out var settings))
+                {
+                    cacheItem = ToCache(settings);
+                }
+                else
+                {
+                    var created = await _unitOfWork.NotificationSettingsRepository.GetOrCreateAsync(userId);
+                    cacheItem = ToCache(created);
+                }
+
+                result[userId] = cacheItem;
+                await _cache.SetAsync(CacheKeys.UserNotifSettings(userId), cacheItem, CacheKeys.MediumTtl);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+            return result;
+        }
+
+        private static NotifSettingsCache ToCache(NotificationSettings settings) => new()
+        {
+            NotificationsEnabled = settings.NotificationsEnabled,
+            NotificationSoundEnabled = settings.NotificationSoundEnabled,
+            MessagePreviewEnabled = settings.MessagePreviewEnabled,
+            EmailNotifications = settings.EmailNotifications
+        };
+
+        private static NotifSettingsCache DefaultSettings() => new()
+        {
+            NotificationsEnabled = true,
+            NotificationSoundEnabled = true,
+            MessagePreviewEnabled = true,
+            EmailNotifications = false
+        };
+
+        private static bool IsMessageRelatedType(string? type) =>
+            type is "mention" or "new_message";
+
+        private async Task TrySendNotificationEmailAsync(Notification notification)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(notification.UserId);
+                if (user is null || string.IsNullOrWhiteSpace(user.Email))
+                    return;
+
+                var displayName = user.Fullname ?? user.Username ?? "bạn";
+                await _emailService.SendNotificationEmailAsync(
+                    user.Email,
+                    displayName,
+                    notification.Title ?? "Thông báo",
+                    notification.Body ?? string.Empty);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to send notification email for NotificationId={NotificationId}",
+                    notification.NotificationId);
             }
         }
     }

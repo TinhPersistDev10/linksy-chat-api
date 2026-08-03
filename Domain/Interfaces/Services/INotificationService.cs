@@ -11,7 +11,7 @@ namespace linksy_backend_api.Core.Interfaces.Services
 {
     public interface INotificationService
     {
-        Task<Notification> CreateNotificationAsync(CreateNotificationRequest notification);
+        Task<Notification?> CreateNotificationAsync(CreateNotificationRequest notification);
         Task CreateBulkNotificationsAsync(List<CreateNotificationRequest> requestsList);
 
         Task<List<NotificationResponse>> GetUserNotificationsAsync(Guid userId, int page = 1, int pageSize = 20);

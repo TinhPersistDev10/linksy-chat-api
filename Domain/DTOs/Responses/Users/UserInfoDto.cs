@@ -19,5 +19,6 @@ namespace linksy_backend_api.DTOs.UserDTO
         public bool IsEmailVerified { get; set; } = false;
         public DateTime CreatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }
+        public List<string> Roles { get; set; } = new();
     }
 }

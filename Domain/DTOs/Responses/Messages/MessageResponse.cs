@@ -37,5 +37,6 @@ namespace linksy_backend_api.DTOs.MessagesDTOs
         public List<MediaAttachmentResponseDto>? Attachments { get; set; }
         public List<MentionDto>? Mentions { get; set; }
         public List<ReactionSummaryResponse> Reactions { get; set; } = new();
+        public PollResponse? Poll { get; set; }
     }
 }

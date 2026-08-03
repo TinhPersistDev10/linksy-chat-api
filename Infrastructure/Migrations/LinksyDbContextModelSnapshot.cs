@@ -387,6 +387,109 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.ToTable("pinned_messages", (string)null);
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePoll", b =>
+                {
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<bool>("IsClosed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_closed");
+
+                    b.Property<string>("Question")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("question");
+
+                    b.HasKey("MessageId")
+                        .HasName("message_polls_pkey");
+
+                    b.ToTable("message_polls", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePollOption", b =>
+                {
+                    b.Property<Guid>("OptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("option_id");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("text");
+
+                    b.HasKey("OptionId")
+                        .HasName("message_poll_options_pkey");
+
+                    b.HasIndex(new[] { "MessageId" }, "message_poll_options_message_id_idx");
+
+                    b.HasIndex(new[] { "MessageId", "SortOrder" }, "message_poll_options_message_id_sort_order_idx");
+
+                    b.ToTable("message_poll_options", (string)null);
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePollVote", b =>
+                {
+                    b.Property<Guid>("VoteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vote_id");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<Guid>("OptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("option_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTime>("VotedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("voted_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("VoteId")
+                        .HasName("message_poll_votes_pkey");
+
+                    b.HasIndex(new[] { "MessageId", "UserId" }, "message_poll_votes_message_id_user_id_key")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "OptionId" }, "message_poll_votes_option_id_idx");
+
+                    b.ToTable("message_poll_votes", (string)null);
+                });
+
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
                 {
                     b.Property<Guid>("ReactionId")
@@ -1586,6 +1689,69 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("PinnedByUser");
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePoll", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_polls_created_by_user_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.Message", "Message")
+                        .WithOne("Poll")
+                        .HasForeignKey("linksy_backend_api.Domain.Entities.Models.MessagePoll", "MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_polls_message_id_fkey");
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("Message");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePollOption", b =>
+                {
+                    b.HasOne("linksy_backend_api.Domain.Entities.Models.MessagePoll", "Poll")
+                        .WithMany("Options")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_poll_options_message_id_fkey");
+
+                    b.Navigation("Poll");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePollVote", b =>
+                {
+                    b.HasOne("linksy_backend_api.Domain.Entities.Models.MessagePollOption", "Option")
+                        .WithMany("Votes")
+                        .HasForeignKey("OptionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_poll_votes_option_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Domain.Entities.Models.MessagePoll", "Poll")
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_poll_votes_message_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("message_poll_votes_user_id_fkey");
+
+                    b.Navigation("Option");
+
+                    b.Navigation("Poll");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessageReaction", b =>
                 {
                     b.HasOne("linksy_backend_api.Models.Message", "Message")
@@ -1896,6 +2062,16 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("MemberPermission");
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePoll", b =>
+                {
+                    b.Navigation("Options");
+                });
+
+            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.MessagePollOption", b =>
+                {
+                    b.Navigation("Votes");
+                });
+
             modelBuilder.Entity("linksy_backend_api.Models.Message", b =>
                 {
                     b.Navigation("Chatrooms");
@@ -1911,6 +2087,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("MessageReactions");
 
                     b.Navigation("PinnedMessages");
+
+                    b.Navigation("Poll");
                 });
 
             modelBuilder.Entity("linksy_backend_api.Models.Role", b =>

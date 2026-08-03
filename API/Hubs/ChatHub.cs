@@ -22,6 +22,7 @@ namespace linksy_backend_api.Hubs
     {
         private readonly IMessageService _messageService;
         private readonly IReactionService _reactionService;
+        private readonly IPollService _pollService;
         private readonly IConnectionManager _connectionManager;
         private readonly IChatroomAccessService _chatroomAccessService;
         private readonly ICallService _callService;
@@ -31,6 +32,7 @@ namespace linksy_backend_api.Hubs
             IChatroomService chatService,
             IMessageService messageService,
             IReactionService reactionService,
+            IPollService pollService,
             IConnectionManager connectionManager,
             IChatroomAccessService chatroomAccessService,
             ICallService callService,
@@ -41,6 +43,7 @@ namespace linksy_backend_api.Hubs
             _logger = logger;
             _messageService = messageService;
             _reactionService = reactionService;
+            _pollService = pollService;
             _callService = callService;
         }
         public override async Task OnConnectedAsync()
@@ -342,6 +345,65 @@ namespace linksy_backend_api.Hubs
             {
                 _logger.LogError(ex, "Error toggling reaction for MessageId={MessageId}, UserId={UserId}", messageId, userId);
                 throw HubErrors.MessageReactionFailed();
+            }
+        }
+
+        public async Task VotePoll(Guid messageId, Guid optionId)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _pollService.VoteAsync(
+                    userId.Value,
+                    messageId,
+                    new VotePollRequest { OptionId = optionId });
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException) { throw HubErrors.MessageNotFound(); }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unauthorized VotePoll MessageId={MessageId}", messageId);
+                throw new HubException("Bạn không thể bình chọn.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new HubException(ex.Message);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new HubException(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error voting poll MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw new HubException("Không thể bình chọn.");
+            }
+        }
+
+        public async Task ClosePoll(Guid messageId)
+        {
+            Guid? userId = null;
+            try
+            {
+                userId = GetCurrentUserId();
+                await _pollService.CloseAsync(userId.Value, messageId);
+            }
+            catch (HubException) { throw; }
+            catch (KeyNotFoundException) { throw HubErrors.MessageNotFound(); }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Unauthorized ClosePoll MessageId={MessageId}", messageId);
+                throw new HubException("Bạn không có quyền đóng bình chọn.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new HubException(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error closing poll MessageId={MessageId}, UserId={UserId}", messageId, userId);
+                throw new HubException("Không thể đóng bình chọn.");
             }
         }
 

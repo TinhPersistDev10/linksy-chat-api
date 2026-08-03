@@ -11,9 +11,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
-    [Route("api/v1/[controller]")]
+    [Route("api/v1/admin")]
     [Authorize(Roles = "Admin")]
-    public class AdminController : ControllerBase
+    public class AdminController : BaseApiController
     {
         private readonly IAdminService _adminService;
         private readonly ILogger<AdminController> _logger;
@@ -22,6 +22,21 @@ namespace linksy_backend_api.API.Controllers
         {
             _adminService = adminService;
             _logger = logger;
+        }
+
+        private ActionResult<ApiResponseDto>? RejectIfSelf(Guid targetUserId, string action)
+        {
+            if (targetUserId == CurrentUserId)
+            {
+                return BadRequest(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = $"Cannot {action} your own account",
+                    Data = null
+                });
+            }
+
+            return null;
         }
 
         #region User Management
@@ -109,6 +124,13 @@ namespace linksy_backend_api.API.Controllers
                 });
             }
 
+            if (dto.IsActive == false)
+            {
+                var selfReject = RejectIfSelf(userId, "deactivate");
+                if (selfReject != null)
+                    return selfReject;
+            }
+
             var result = await _adminService.UpdateUserAsync(userId, dto);
 
             if (!result.Success)
@@ -124,10 +146,14 @@ namespace linksy_backend_api.API.Controllers
         [HttpDelete("users/{userId}")]
         public async Task<ActionResult<ApiResponseDto>> DeleteUser(Guid userId)
         {
+            var selfReject = RejectIfSelf(userId, "delete");
+            if (selfReject != null)
+                return selfReject;
+
             var result = await _adminService.DeleteUserAsync(userId);
 
             if (!result.Success)
-                return NotFound(result);
+                return BadRequest(result);
 
             return Ok(result);
         }
@@ -136,16 +162,20 @@ namespace linksy_backend_api.API.Controllers
         /// Toggle user active status (activate/deactivate)
         /// PATCH /api/admin/users/{userId}/toggle-status
         /// </summary>
-        // [HttpPatch("users/{userId}/toggle-status")]
-        // public async Task<ActionResult<ApiResponseDto>> ToggleUserStatus(Guid userId)
-        // {
-        //     var result = await _adminService.ToggleUserStatusAsync(userId);
+        [HttpPatch("users/{userId}/toggle-status")]
+        public async Task<ActionResult<ApiResponseDto>> ToggleUserStatus(Guid userId)
+        {
+            var selfReject = RejectIfSelf(userId, "change status of");
+            if (selfReject != null)
+                return selfReject;
 
-        //     if (!result.Success)
-        //         return NotFound(result);
+            var result = await _adminService.ToggleUserStatusAsync(userId);
 
-        //     return Ok(result);
-        // }
+            if (!result.Success)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
 
         /// <summary>
         /// Reset user password
@@ -167,12 +197,15 @@ namespace linksy_backend_api.API.Controllers
                 });
             }
 
-            if (string.IsNullOrWhiteSpace(dto.NewPassword) || dto.NewPassword.Length < 6)
+            if (string.IsNullOrWhiteSpace(dto.NewPassword) ||
+                dto.NewPassword.Length < 8 ||
+                !dto.NewPassword.Any(char.IsLetter) ||
+                !dto.NewPassword.Any(char.IsDigit))
             {
                 return BadRequest(new ApiResponseDto
                 {
                     Success = false,
-                    Message = "Password must be at least 6 characters",
+                    Message = "Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ và số",
                     Data = null ?? new ApiResponseDto
                     { Success = false, Message = "Reset Password error" }
                 });
@@ -188,99 +221,120 @@ namespace linksy_backend_api.API.Controllers
 
         #endregion
 
-        // #region Role Management
+        #region Role Management
 
-        // /// <summary>
-        // /// Get all available roles
-        // /// GET /api/admin/roles
-        // /// </summary>
-        // [HttpGet("roles")]
-        // public async Task<ActionResult<ApiResponseDto>> GetAllRoles()
-        // {
-        //     var result = await _adminService.GetAllRolesAsync();
-        //     return Ok(result);
-        // }
+        /// <summary>
+        /// Get all available roles
+        /// GET /api/v1/admin/roles
+        /// </summary>
+        [HttpGet("roles")]
+        public async Task<ActionResult<ApiResponseDto>> GetAllRoles()
+        {
+            var result = await _adminService.GetAllRolesAsync();
+            return Ok(result);
+        }
 
-        // /// <summary>
-        // /// Get user's assigned roles
-        // /// GET /api/admin/users/{userId}/roles
-        // /// </summary>
-        // [HttpGet("users/{userId}/roles")]
-        // public async Task<ActionResult<ApiResponseDto>> GetUserRoles(Guid userId)
-        // {
-        //     var result = await _adminService.GetUserRolesAsync(userId);
-        //     return Ok(result);
-        // }
+        /// <summary>
+        /// Get user's assigned roles
+        /// GET /api/v1/admin/users/{userId}/roles
+        /// </summary>
+        [HttpGet("users/{userId}/roles")]
+        public async Task<ActionResult<ApiResponseDto>> GetUserRoles(Guid userId)
+        {
+            var result = await _adminService.GetUserRolesAsync(userId);
 
-        // /// <summary>
-        // /// Assign role to user
-        // /// POST /api/admin/users/assign-role
-        // /// Body: { "userId": "guid", "roleId": 1 }
-        // /// </summary>
-        // [HttpPost("users/assign-role")]
-        // public async Task<ActionResult<ApiResponseDto>> AssignRole([FromBody] AssignRoleDto dto)
-        // {
-        //     if (!ModelState.IsValid)
-        //     {
-        //         return BadRequest(new ApiResponseDto
-        //         {
-        //             Success = false,
-        //             Message = "Invalid data",
-        //             Data = null
-        //         });
-        //     }
+            if (!result.Success)
+                return NotFound(result);
 
-        //     var result = await _adminService.AssignRoleAsync(dto);
+            return Ok(result);
+        }
 
-        //     if (!result.Success)
-        //         return BadRequest(result);
+        /// <summary>
+        /// Assign role to user
+        /// POST /api/v1/admin/users/assign-role
+        /// Body: { "userId": "guid", "roleId": 1 }
+        /// </summary>
+        [HttpPost("users/assign-role")]
+        public async Task<ActionResult<ApiResponseDto>> AssignRole([FromBody] AssignRoleDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Invalid data",
+                    Data = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList()
+                });
+            }
 
-        //     return Ok(result);
-        // }
+            var result = await _adminService.AssignRoleAsync(dto);
 
-        // /// <summary>
-        // /// Remove role from user
-        // /// DELETE /api/admin/users/{userId}/roles/{roleId}
-        // /// </summary>
-        // [HttpDelete("users/{userId}/roles/{roleId}")]
-        // public async Task<ActionResult<ApiResponseDto>> RemoveRole(Guid userId, int roleId)
-        // {
-        //     var result = await _adminService.RemoveRoleAsync(userId, roleId);
+            if (!result.Success)
+                return BadRequest(result);
 
-        //     if (!result.Success)
-        //         return NotFound(result);
+            return Ok(result);
+        }
 
-        //     return Ok(result);
-        // }
+        /// <summary>
+        /// Remove role from user
+        /// DELETE /api/v1/admin/users/{userId}/roles/{roleId}
+        /// </summary>
+        [HttpDelete("users/{userId}/roles/{roleId}")]
+        public async Task<ActionResult<ApiResponseDto>> RemoveRole(Guid userId, int roleId)
+        {
+            var selfReject = RejectIfSelf(userId, "remove role from");
+            if (selfReject != null)
+                return selfReject;
 
-        // #endregion
+            var result = await _adminService.RemoveRoleAsync(userId, roleId);
 
-        // #region Statistics & Analytics
+            if (!result.Success)
+                return BadRequest(result);
 
-        // /// <summary>
-        // /// Get admin dashboard statistics
-        // /// GET /api/admin/statistics
-        // /// </summary>
-        // [HttpGet("statistics")]
-        // public async Task<ActionResult<ApiResponseDto>> GetStatistics()
-        // {
-        //     var result = await _adminService.GetStatisticsAsync();
-        //     return Ok(result);
-        // }
+            return Ok(result);
+        }
 
-        // /// <summary>
-        // /// Get recent activities
-        // /// GET /api/admin/activities/recent?limit=10
-        // /// </summary>
-        // [HttpGet("activities/recent")]
-        // public async Task<ActionResult<ApiResponseDto>> GetRecentActivities(
-        //     [FromQuery] int limit = 10)
-        // {
-        //     var result = await _adminService.GetRecentActivitiesAsync(limit);
-        //     return Ok(result);
-        // }
+        #endregion
 
-        // #endregion
+        #region Statistics & Analytics
+
+        /// <summary>
+        /// Get admin dashboard statistics
+        /// GET /api/v1/admin/statistics
+        /// </summary>
+        [HttpGet("statistics")]
+        public async Task<ActionResult<ApiResponseDto>> GetStatistics()
+        {
+            var result = await _adminService.GetStatisticsAsync();
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Get recent activities
+        /// GET /api/v1/admin/activities/recent?limit=10
+        /// </summary>
+        [HttpGet("activities/recent")]
+        public async Task<ActionResult<ApiResponseDto>> GetRecentActivities(
+            [FromQuery] int limit = 10)
+        {
+            if (limit < 1 || limit > 100)
+            {
+                return BadRequest(new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Limit must be between 1 and 100",
+                    Data = null
+                });
+            }
+
+            var result = await _adminService.GetRecentActivitiesAsync(limit);
+            return Ok(result);
+        }
+
+        #endregion
 
         // #region Bulk Operations
 

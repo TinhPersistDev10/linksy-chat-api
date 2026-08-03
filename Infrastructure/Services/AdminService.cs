@@ -693,6 +693,23 @@ namespace linksy_backend_api.Infrastructure.Services
                     };
                 }
 
+                var role = await _unitOfWork.Roles.GetByIdAsync(roleId);
+                if (role?.RoleName == "Admin")
+                {
+                    var adminCount = await _unitOfWork.UserRoles.Query()
+                        .CountAsync(ur => ur.Role.RoleName == "Admin");
+
+                    if (adminCount <= 1)
+                    {
+                        return new ApiResponseDto
+                        {
+                            Success = false,
+                            Message = "Cannot remove the last admin role",
+                            Data = ""
+                        };
+                    }
+                }
+
                 _unitOfWork.UserRoles.Remove(userRole);
                 await _unitOfWork.SaveChangesAsync();
 
@@ -733,6 +750,8 @@ namespace linksy_backend_api.Infrastructure.Services
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
                 user.PasswordChangedAt = DateTime.UtcNow;
                 user.UpdatedAt = DateTime.UtcNow;
+                user.FailedLoginAttempts = 0;
+                user.AccountLockedUntil = null;
 
                 _unitOfWork.Users.Update(user);
                 await _unitOfWork.SaveChangesAsync();
@@ -771,7 +790,31 @@ namespace linksy_backend_api.Infrastructure.Services
                     };
                 }
 
-                user.IsActive = !(user.IsActive ?? true);
+                var willDeactivate = user.IsActive ?? true;
+                if (willDeactivate)
+                {
+                    var isAdmin = await _unitOfWork.UserRoles.Query()
+                        .AnyAsync(ur => ur.UserId == userId && ur.Role.RoleName == "Admin");
+
+                    if (isAdmin)
+                    {
+                        var adminCount = await _unitOfWork.UserRoles.Query()
+                            .Where(ur => ur.Role.RoleName == "Admin")
+                            .CountAsync();
+
+                        if (adminCount <= 1)
+                        {
+                            return new ApiResponseDto
+                            {
+                                Success = false,
+                                Message = "Cannot deactivate the last admin user",
+                                Data = ""
+                            };
+                        }
+                    }
+                }
+
+                user.IsActive = !willDeactivate;
                 user.UpdatedAt = DateTime.UtcNow;
 
                 _unitOfWork.Users.Update(user);
@@ -847,7 +890,32 @@ namespace linksy_backend_api.Infrastructure.Services
                 user.DateOfBirth = dto.DateOfBirth ?? user.DateOfBirth;
 
                 if (dto.IsActive.HasValue)
+                {
+                    if (dto.IsActive.Value == false)
+                    {
+                        var isAdmin = await _unitOfWork.UserRoles.Query()
+                            .AnyAsync(ur => ur.UserId == userId && ur.Role.RoleName == "Admin");
+
+                        if (isAdmin)
+                        {
+                            var adminCount = await _unitOfWork.UserRoles.Query()
+                                .Where(ur => ur.Role.RoleName == "Admin")
+                                .CountAsync();
+
+                            if (adminCount <= 1)
+                            {
+                                return new ApiResponseDto
+                                {
+                                    Success = false,
+                                    Message = "Cannot deactivate the last admin user",
+                                    Data = ""
+                                };
+                            }
+                        }
+                    }
+
                     user.IsActive = dto.IsActive.Value;
+                }
 
                 if (dto.IsEmailVerified.HasValue)
                     user.IsEmailVerified = dto.IsEmailVerified.Value;
