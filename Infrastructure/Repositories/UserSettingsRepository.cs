@@ -101,7 +101,8 @@ namespace linksy_backend_api.Infrastructure.Repositories
                 LastSeenEnabled = true,
                 ProfilePhotoVisibility = "everyone",
                 StatusVisibility = "everyone",
-                WhoCanAddToGroups = "everyone"
+                WhoCanAddToGroups = "everyone",
+                WhoCanMessageMe = "everyone"
             };
             await _context.PrivacySettings.AddAsync(settings, ct);
             return settings;

@@ -90,12 +90,18 @@ public static class HubErrors
     public static HubException MessageAlreadyReacted()
         => Create(HubErrorCodes.MessageAlreadyReacted, "Bạn đã thả cảm xúc này rồi.");
 
+    public static HubException ContactRestricted(string message)
+        => Create(HubErrorCodes.ContactRestricted, message);
+
     // ─── Call ─────────────────────────────────────────────────────────────
     public static HubException CallNotFound()
         => Create(HubErrorCodes.CallNotFound, "Không tìm thấy cuộc gọi.");
 
     public static HubException CallInitFailed()
         => Create(HubErrorCodes.CallInitFailed, "Không thể khởi tạo cuộc gọi.");
+
+    public static HubException CallInitFailed(string message)
+        => Create(HubErrorCodes.CallInitFailed, message);
 
     public static HubException CallAnswerFailed()
         => Create(HubErrorCodes.CallAnswerFailed, "Không thể trả lời cuộc gọi.");

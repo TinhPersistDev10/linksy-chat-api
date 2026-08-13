@@ -121,5 +121,19 @@ namespace linksy_backend_api.Infrastructure.Services
                 Message = "Đã bỏ chặn người dùng"
             };
         }
+
+        public async Task<(bool IBlocked, bool BlockedBy)> GetBlockStatusAsync(Guid userId, Guid otherUserId)
+        {
+            if (userId == otherUserId)
+                return (false, false);
+
+            var iBlocked = await _unitOfWork.BlockedUsers.Query()
+                .AnyAsync(b => b.BlockerUserId == userId && b.BlockedUserId == otherUserId);
+
+            var blockedBy = await _unitOfWork.BlockedUsers.Query()
+                .AnyAsync(b => b.BlockerUserId == otherUserId && b.BlockedUserId == userId);
+
+            return (iBlocked, blockedBy);
+        }
     }
 }

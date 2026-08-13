@@ -1,6 +1,7 @@
 using linksy_backend_api.Core.DTOs.Responses.Friends;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.FriendDTO;
+using linksy_backend_api.DTOs.RelationshipDTO;
 using linksy_backend_api.DTOs.UserDTO;
 
 namespace linksy_backend_api.Services.IServices
@@ -18,5 +19,6 @@ namespace linksy_backend_api.Services.IServices
         Task<ApiResponseDto> RejectFriendRequestAsync(Guid userId, Guid requestId);
         Task<ApiResponseDto> CancelFriendRequestAsync(Guid userId, Guid requestId);
         Task<ApiResponseDto> UnfriendAsync(Guid userId, Guid friendId);
+        Task<RelationshipDto> GetRelationshipAsync(Guid userId, Guid otherUserId);
     }
 }

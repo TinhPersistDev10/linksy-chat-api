@@ -77,6 +77,19 @@ namespace linksy_backend_api.Infrastructure.Data.Configurations
                 .HasDefaultValue(0)
                 .HasColumnName("message_count");
 
+            // is_pinned / pinned_at (per-user conversation pin)
+            entity.Property(e => e.IsPinned)
+                .HasDefaultValue(false)
+                .HasColumnName("is_pinned");
+            entity.Property(e => e.PinnedAt)
+                .HasColumnName("pinned_at");
+
+            // cleared_at — hide history for this member (delete conversation)
+            entity.Property(e => e.ClearedAt)
+                .HasColumnName("cleared_at");
+
+            entity.HasIndex(e => new { e.UserId, e.IsPinned, e.PinnedAt }, "chatroom_members_user_id_is_pinned_pinned_at_idx");
+
             //added_by
             entity.Property(e => e.AddedBy)
                 .HasColumnName("added_by");

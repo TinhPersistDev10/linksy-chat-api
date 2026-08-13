@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using linksy_backend_api.Core.Interfaces.Repositories;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Interfaces.Repositories;
@@ -15,6 +16,7 @@ using linksy_backend_api.Repositories.IRepositories;
 using linksy_backend_api.Services;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
@@ -272,13 +274,20 @@ builder.Services.AddScoped<IFriendService, FriendService>();
 builder.Services.AddScoped<IMessageService, MessageService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IBlockedService, BlockedService>();
+builder.Services.AddScoped<IUserReportService, UserReportService>();
+builder.Services.AddScoped<IUserModerationService, UserModerationService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IGroupInvitationService, GroupInvitationService>();
 builder.Services.AddScoped<IChatroomAccessService, ChatroomAccessService>();
+builder.Services.AddScoped<IDirectContactPrivacyService, DirectContactPrivacyService>();
 builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 builder.Services.AddScoped<IReactionService, ReactionService>();
 builder.Services.AddScoped<IPollService, PollService>();
+builder.Services.AddSingleton<IContentModerationService, ContentModerationService>();
+builder.Services.Configure<linksy_backend_api.Domain.Options.ContentModerationOptions>(
+    builder.Configuration.GetSection(
+        linksy_backend_api.Domain.Options.ContentModerationOptions.SectionName));
 builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
 builder.Services.AddScoped<ICallService, CallService>();
 builder.Services.AddScoped<ITokenRepository, TokenRepository>();
@@ -350,34 +359,102 @@ builder.Services.Configure<RouteOptions>(options =>
 {
     options.LowercaseUrls = true;
 });
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    // Only trust arbitrary proxies outside Development (configure KnownProxies in production when possible).
+    if (!builder.Environment.IsDevelopment())
+    {
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    }
+});
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddFixedWindowLimiter("auth", o =>
-    {
-        o.PermitLimit = 5;
-        o.Window = TimeSpan.FromMinutes(1);
-        o.QueueLimit = 0;
-    });
-    options.AddSlidingWindowLimiter("api", o =>
-    {
-        o.PermitLimit = 100;
-        o.Window = TimeSpan.FromMinutes(1);
-        o.SegmentsPerWindow = 4;
-        o.QueueLimit = 0;
-    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Auth: login/register/OTP — 5 req/min/IP
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: GetClientIp(httpContext),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    // Authenticated API — 100 req/min/user (fallback IP)
+    options.AddPolicy("api", httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: GetAuthenticatedKey(httpContext),
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                QueueLimit = 0,
+            }));
+
+    // Uploads — 10 req / 10 min / user
+    options.AddPolicy("upload", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: GetAuthenticatedKey(httpContext),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+            }));
+
+    // Public/unauthenticated endpoints — 30 req/min/IP
+    options.AddPolicy("public", httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: GetClientIp(httpContext),
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                QueueLimit = 0,
+            }));
+
     options.OnRejected = async (context, token) =>
     {
-        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-        await context.HttpContext.Response.WriteAsJsonAsync(new
+        var response = context.HttpContext.Response;
+        response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        int? retryAfterSeconds = null;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            retryAfterSeconds = (int)retryAfter.TotalSeconds;
+            response.Headers.RetryAfter = retryAfterSeconds.Value.ToString();
+        }
+
+        await response.WriteAsJsonAsync(new
         {
             success = false,
             code = "TOO_MANY_REQUESTS",
-            message = "Bạn gửi quá nhiều request. Vui lòng thử lại sau."
+            message = "Bạn gửi quá nhiều request. Vui lòng thử lại sau.",
+            retryAfterSeconds
         }, token);
     };
 });
 
+// Prefer RemoteIpAddress (rewritten by UseForwardedHeaders when behind a trusted proxy).
+static string GetClientIp(HttpContext ctx) =>
+    ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+static string GetAuthenticatedKey(HttpContext ctx)
+{
+    var userId = ctx.User.FindFirst("user_id")?.Value;
+    if (!string.IsNullOrEmpty(userId))
+        return $"user:{userId}";
+    return $"ip:{GetClientIp(ctx)}";
+}
+
 var app = builder.Build();
+app.UseForwardedHeaders();
 if (!app.Environment.IsProduction())
 {
     app.Use(async (context, next) =>

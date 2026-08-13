@@ -52,30 +52,14 @@ namespace linksy_backend_api.Repositories
 
             return friendships.Select(f => f.User1Id == userId ? f.User2 : f.User1)
                     .ToList();
+        }
 
-            // try
-            // {
-            //     _logger.LogInformation($"Getting friends for user: {userId}");
-
-            //     var friendships = await Query()
-            //         .Include(f => f.User1)
-            //         .Include(f => f.User2)
-            //         .Where(f => f.User1Id == userId || f.User2Id == userId)
-            //         .ToListAsync();
-
-            //     _logger.LogInformation($"Found {friendships.Count} friendships");
-
-            //     var friends = friendships.Select(f => f.User1Id == userId ? f.User2 : f.User1)
-            //             .ToList();
-
-            //     _logger.LogInformation($"Returning {friends.Count} friends");
-            //     return friends;
-            // }
-            // catch (Exception ex)
-            // {
-            //     _logger.LogError(ex, $"Error in GetUserFriendsAsync for user {userId}");
-            //     throw;
-            // }
+        public async Task<List<Guid>> GetFriendIdsAsync(Guid userId)
+        {
+            return await Query()
+                .Where(f => f.User1Id == userId || f.User2Id == userId)
+                .Select(f => f.User1Id == userId ? f.User2Id : f.User1Id)
+                .ToListAsync();
         }
     }
 }

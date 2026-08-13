@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using linksy_backend_api.Domain.Enums;
-using linksy_backend_api.Domain.Interfaces.Repositories;
+using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Repositories.IRepositories;
 
 namespace linksy_backend_api.Infrastructure.Services

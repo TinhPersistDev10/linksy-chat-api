@@ -14,10 +14,13 @@ using linksy_backend_api.Repositories;
 using linksy_backend_api.Repositories.IRepositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.API.Controllers
 {
     [Authorize]
+    [EnableRateLimiting("api")]
+    [ApiController]
     [Route("api/v1/chatrooms/{chatroomId:guid}/permissions")]
     [Produces("application/json")]
     public class MemberPermissionController : BaseApiController  // ✅ kế thừa BaseApiController

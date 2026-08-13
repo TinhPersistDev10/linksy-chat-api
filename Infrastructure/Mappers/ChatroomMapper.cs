@@ -42,37 +42,58 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 };
             }).ToList();
 
-            // Last message
+            var myMembership = members.FirstOrDefault(m => m.UserId == currentUserId);
+            var clearedAt = myMembership?.ClearedAt;
+
+            // Last message (respect per-user clear)
             MessageResponse? lastMessageDto = null;
             if (chatroom.LastMessageId != null)
             {
                 var lastMessage = await unitOfWork.Messages.GetByIdAsync(chatroom.LastMessageId.Value);
-                if (lastMessage != null)
+                if (lastMessage != null &&
+                    (clearedAt == null || lastMessage.SentAt > clearedAt))
+                {
                     lastMessageDto = await MessageMapper.ToResponseAsync(lastMessage, unitOfWork);
+                }
+                else if (clearedAt != null)
+                {
+                    var visibleLast = await unitOfWork.MessageRepository.GetLastMessageAfterAsync(
+                        chatroom.ChatroomId, clearedAt.Value);
+                    if (visibleLast != null)
+                        lastMessageDto = await MessageMapper.ToResponseAsync(visibleLast, unitOfWork);
+                }
             }
 
-            // Unread count — fallback JoinedAt thay vì DateTime.MinValue
-            var myMembership = members.FirstOrDefault(m => m.UserId == currentUserId);
+            // Unread count — baseline is max(LastReadAt, ClearedAt, JoinedAt)
             var unreadCount = 0;
             if (myMembership != null)
             {
                 var lastRead = myMembership.LastReadAt ?? myMembership.JoinedAt ?? DateTime.UtcNow;
-                unreadCount = await unitOfWork.MessageRepository.GetUnreadCountAsync(chatroom.ChatroomId, currentUserId, lastRead);
+                if (clearedAt.HasValue && clearedAt.Value > lastRead)
+                    lastRead = clearedAt.Value;
+                unreadCount = await unitOfWork.MessageRepository.GetUnreadCountAsync(
+                    chatroom.ChatroomId, currentUserId, lastRead);
             }
 
             // MyMemberInfo + permissions
             MemberInfoResponseDto? myMemberInfo = null;
             if (myMembership != null)
             {
+                var preference = myMembership.NotificationPreference ?? "all";
+                var isSelfMuted = (myMembership.IsMuted ?? false) ||
+                    string.Equals(preference, "mute", StringComparison.OrdinalIgnoreCase);
                 var permission = await unitOfWork.MemberPermissionRepository.GetByMemberIdAsync(myMembership.MemberId);
                 myMemberInfo = new MemberInfoResponseDto
                 {
                     MemberId = myMembership.MemberId,
                     MemberRole = myMembership.MemberRole,
                     Nickname = myMembership.Nickname,
-                    IsMuted = myMembership.IsMuted ?? false,
+                    IsMuted = isSelfMuted,
                     MutedUntil = myMembership.MutedUntil,
-                    NotificationPreference = myMembership.NotificationPreference ?? "all",
+                    NotificationPreference = preference,
+                    IsPinned = myMembership.IsPinned,
+                    PinnedAt = myMembership.PinnedAt,
+                    ClearedAt = myMembership.ClearedAt,
                     MessageCount = myMembership.MessageCount ?? 0,
                     LastReadAt = myMembership.LastReadAt,
                     JoinedAt = myMembership.JoinedAt ?? DateTime.UtcNow,

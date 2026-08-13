@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using linksy_backend_api.Domain.DTOs.Requests.MemberPermission;
 using linksy_backend_api.Domain.DTOs.Responses.MemberPermission;
 using linksy_backend_api.Domain.Entities.Models;
-using linksy_backend_api.Infrastructure.Services.Results;
+using linksy_backend_api.Domain.Results;
 
 namespace linksy_backend_api.Domain.Interfaces.Services
 {

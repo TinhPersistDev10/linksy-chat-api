@@ -8,11 +8,13 @@ using linksy_backend_api.DTOs.FriendDTO;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 namespace linksy_backend_api.Controllers
 {
     [Authorize]
+    [EnableRateLimiting("api")]
     [ApiController]
     [Route("api/v1/[controller]")]
     public class FriendsController : ControllerBase
@@ -270,6 +272,30 @@ namespace linksy_backend_api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error unfriending");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Lấy quan hệ với user khác (friends / blocked / blocked_by / …)
+        /// </summary>
+        [HttpGet("relationship/{otherUserId:guid}")]
+        public async Task<IActionResult> GetRelationship(Guid otherUserId)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst("user_id")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { message = "Invalid user ID" });
+                }
+
+                var relationship = await _friendService.GetRelationshipAsync(userId, otherUserId);
+                return Ok(relationship);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting relationship with {OtherUserId}", otherUserId);
                 return BadRequest(new { message = ex.Message });
             }
         }

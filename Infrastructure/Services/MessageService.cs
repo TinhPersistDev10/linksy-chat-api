@@ -28,10 +28,13 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly ILogger<MessageService> _logger;
         private readonly IFileService _fileService;
         private readonly IChatroomAccessService _chatroomAccessService;
+        private readonly IDirectContactPrivacyService _directContactPrivacy;
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly ICacheService _cache;
         private readonly INotificationService _messageNotificationService;
         private readonly IPollService _pollService;
+        private readonly IContentModerationService _contentModeration;
+        private readonly IUserModerationService _userModeration;
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
             _cacheLocks = new();
@@ -40,24 +43,36 @@ namespace linksy_backend_api.Infrastructure.Services
             ILogger<MessageService> logger,
             IFileService fileService,
             IChatroomAccessService chatroomAccessService,
+            IDirectContactPrivacyService directContactPrivacy,
             IHubContext<ChatHub> hubContext,
             INotificationService messageNotificationService,
             ICacheService cache,
-            IPollService pollService)
+            IPollService pollService,
+            IContentModerationService contentModeration,
+            IUserModerationService userModeration)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
             _fileService = fileService;
             _chatroomAccessService = chatroomAccessService;
+            _directContactPrivacy = directContactPrivacy;
             _hubContext = hubContext;
             _messageNotificationService = messageNotificationService;
             _cache = cache;
             _pollService = pollService;
+            _contentModeration = contentModeration;
+            _userModeration = userModeration;
         }
 
         // ─────────────────────────────────────────────────────────────────────
         // GET
         // ─────────────────────────────────────────────────────────────────────
+
+        private async Task<DateTime?> GetMemberClearedAtAsync(Guid chatroomId, Guid userId)
+        {
+            var member = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId);
+            return member?.ClearedAt;
+        }
 
         public async Task<IEnumerable<MessageResponse>> GetMessagesAsync(Guid userId, Guid chatroomId, int page = 1, int pageSize = 50)
         { // Chỉ cache page 1 (tin nhắn mới nhất) — các page cũ không cần realtime
@@ -68,7 +83,9 @@ namespace linksy_backend_api.Infrastructure.Services
             if (!isMember)
                 throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
 
-            var messages = await _unitOfWork.MessageRepository.GetChatroomMessagesAsync(chatroomId, page, pageSize);
+            var clearedAt = await GetMemberClearedAtAsync(chatroomId, userId);
+            var messages = await _unitOfWork.MessageRepository.GetChatroomMessagesAsync(
+                chatroomId, page, pageSize, clearedAt);
             // Repo trả newest-first; đảo thành oldest→newest cho UI.
             messages.Reverse();
             return await MapMessagesWithDeliveriesAsync(messages, userId);
@@ -87,8 +104,9 @@ namespace linksy_backend_api.Infrastructure.Services
             if (!isMember)
                 throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
 
+            var clearedAt = await GetMemberClearedAtAsync(chatroomId, userId);
             var (messages, hasMoreBefore) = await _unitOfWork.MessageRepository
-                .GetMessagesAroundAsync(chatroomId, messageId, beforeCount, afterCount);
+                .GetMessagesAroundAsync(chatroomId, messageId, beforeCount, afterCount, clearedAt);
 
             if (messages.Count == 0)
                 throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
@@ -108,8 +126,9 @@ namespace linksy_backend_api.Infrastructure.Services
             if (!isMember)
                 throw new UnauthorizedAccessException("Bạn không có quyền xem tin nhắn này.");
 
+            var clearedAt = await GetMemberClearedAtAsync(chatroomId, userId);
             var (messages, hasMore) = await _unitOfWork.MessageRepository
-                .GetMessagesBeforeAsync(chatroomId, beforeMessageId, pageSize);
+                .GetMessagesBeforeAsync(chatroomId, beforeMessageId, pageSize, clearedAt);
 
             return (await MapMessagesWithDeliveriesAsync(messages, userId), hasMore);
         }
@@ -184,6 +203,19 @@ namespace linksy_backend_api.Infrastructure.Services
 
         public async Task<MessageResponse> SendMessageAsync(Guid userId, SendMessageRequest messageDto)
         {
+            var sender = await _unitOfWork.Users.GetByIdAsync(userId)
+                ?? throw new UnauthorizedAccessException("Người dùng không tồn tại.");
+            await _userModeration.RefreshExpiredModerationAsync(sender, save: true);
+            if (!_userModeration.CanSendMessages(sender))
+            {
+                var level = _userModeration.GetEffectiveLevel(sender);
+                var until = sender.ModerationExpiresAt?.ToString("dd/MM/yyyy HH:mm");
+                throw new UnauthorizedAccessException(
+                    level == ModerationLevels.Restricted
+                        ? $"Tài khoản đang bị hạn chế nhắn tin{(until != null ? $" đến {until} UTC" : "")}."
+                        : "Tài khoản hiện không được phép gửi tin nhắn.");
+            }
+
             messageDto.MessageType = messageDto.MessageType.Trim().ToLowerInvariant();
             messageDto.MessageText = messageDto.MessageText?.Trim() ?? string.Empty;
 
@@ -205,6 +237,10 @@ namespace linksy_backend_api.Infrastructure.Services
                 throw new ArgumentException(
                     "Tin nhắn không được vượt quá 5000 ký tự."
                 );
+
+            if (messageDto.MessageType != "poll")
+                _contentModeration.EnsureAllowed(messageDto.MessageText);
+
             var isMember = await _unitOfWork.ChatroomMembers.AnyAsync(rm =>
                 rm.ChatroomId == messageDto.ChatroomId &&
                 rm.UserId == userId &&
@@ -212,6 +248,8 @@ namespace linksy_backend_api.Infrastructure.Services
 
             if (!isMember)
                 throw new UnauthorizedAccessException("Bạn không phải là thành viên của phòng chat này.");
+
+            await _directContactPrivacy.EnsureCanContactInChatroomAsync(userId, messageDto.ChatroomId, "message");
 
             var canSend = await _unitOfWork.MemberPermissionRepository.HasPermissionAsync(userId, messageDto.ChatroomId, PermissionType.CanSendMessages);
             if (!canSend)
@@ -285,6 +323,11 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 if (normalizedPollOptions.Any(o => o.Length > 100))
                     throw new ArgumentException("Mỗi lựa chọn tối đa 100 ký tự.");
+
+//
+                _contentModeration.EnsureAllowed(question);
+                foreach (var option in normalizedPollOptions)
+                    _contentModeration.EnsureAllowed(option);
 
                 messageDto.MessageText = question;
                 messageDto.Attachments = null;
@@ -657,6 +700,8 @@ namespace linksy_backend_api.Infrastructure.Services
                 throw new ArgumentException("Nội dung tin nhắn không được để trống.");
             if (newText.Length > 5000)
                 throw new ArgumentException("Tin nhắn không được vượt quá 5000 ký tự.");
+
+            _contentModeration.EnsureAllowed(newText);
 
             var message = await _unitOfWork.Messages.GetByIdAsync(messageId)
                 ?? throw new KeyNotFoundException("Không tìm thấy tin nhắn.");
@@ -1161,7 +1206,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 foreach (var member in members.Where(m => m.UserId != senderId))
                 {
                     var preference = (member.NotificationPreference ?? "all").Trim().ToLowerInvariant();
-                    if (preference == "mute")
+                    if (preference == "mute" || (member.IsMuted ?? false))
                         continue;
                     if (preference == "mentions" && !mentionedSet.Contains(member.UserId))
                         continue;

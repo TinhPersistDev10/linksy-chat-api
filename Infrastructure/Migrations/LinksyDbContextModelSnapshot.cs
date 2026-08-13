@@ -620,6 +620,13 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         .HasColumnName("who_can_add_to_groups")
                         .HasDefaultValueSql("'everyone'::character varying");
 
+                    b.Property<string>("WhoCanMessageMe")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("who_can_message_me")
+                        .HasDefaultValueSql("'everyone'::character varying");
+
                     b.HasKey("Id")
                         .HasName("privacy_settings_pkey");
 
@@ -912,11 +919,21 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("chatroom_id");
 
+                    b.Property<DateTime?>("ClearedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cleared_at");
+
                     b.Property<bool?>("IsMuted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false)
                         .HasColumnName("is_muted");
+
+                    b.Property<bool>("IsPinned")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_pinned");
 
                     b.Property<DateTime?>("JoinedAt")
                         .ValueGeneratedOnAdd()
@@ -961,6 +978,10 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         .HasColumnName("notification_preference")
                         .HasDefaultValueSql("'all::character varying");
 
+                    b.Property<DateTime?>("PinnedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("pinned_at");
+
                     b.Property<Guid?>("RemovedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("removed_by");
@@ -984,6 +1005,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex(new[] { "UserId", "ChatroomId" }, "chatroom_members_user_id_chatroom_id_idx");
+
+                    b.HasIndex(new[] { "UserId", "IsPinned", "PinnedAt" }, "chatroom_members_user_id_is_pinned_pinned_at_idx");
 
                     b.HasIndex(new[] { "UserId", "LeftAt" }, "chatroom_members_user_id_left_at_idx");
 

@@ -2,12 +2,14 @@ using linksy_backend_api.DTOs.ChatroomDTO;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace linksy_backend_api.Controllers
 {
     [Authorize]
+    [EnableRateLimiting("api")]
     [ApiController]
     [Route("api/v1/chatrooms")]
     public class ChatroomsController : ControllerBase
@@ -96,6 +98,7 @@ namespace linksy_backend_api.Controllers
                 return Ok(chatroom);
             }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating direct chatroom");
@@ -195,6 +198,67 @@ namespace linksy_backend_api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error archiving chatroom");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{chatroomId:guid}/pin")]
+        public async Task<IActionResult> PinChatroom(Guid chatroomId, [FromBody] PinChatroomRequest request)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.PinChatroomAsync(userId, chatroomId, request.IsPinned);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error pinning chatroom");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{chatroomId:guid}/mute")]
+        public async Task<IActionResult> MuteChatroom(Guid chatroomId, [FromBody] MuteConversationRequest request)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.MuteChatroomAsync(
+                    userId, chatroomId, request.IsMuted, request.MuteUntil);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error muting chatroom");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Soft-delete conversation for the current user (hide history + remove from list until new activity).
+        /// </summary>
+        [HttpPost("{chatroomId:guid}/clear")]
+        public async Task<IActionResult> ClearConversation(Guid chatroomId)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.ClearConversationAsync(userId, chatroomId);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error clearing conversation");
                 return BadRequest(new { message = ex.Message });
             }
         }

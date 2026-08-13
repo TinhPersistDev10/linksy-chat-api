@@ -68,6 +68,35 @@ namespace linksy_backend_api.Infrastructure.Data.Configurations
             entity.Property(e => e.Username)
                 .HasColumnType("character varying")
                 .HasColumnName("username");
+
+            entity.Property(e => e.ModerationLevel)
+                .HasMaxLength(30)
+                .HasDefaultValue("none")
+                .HasColumnName("moderation_level");
+            entity.Property(e => e.ModerationReason)
+                .HasMaxLength(500)
+                .HasColumnName("moderation_reason");
+            entity.Property(e => e.ModerationExpiresAt)
+                .HasColumnName("moderation_expires_at");
+            entity.Property(e => e.ModeratedAt)
+                .HasColumnName("moderated_at");
+            entity.Property(e => e.ModeratedByAdminId)
+                .HasColumnName("moderated_by_admin_id");
+            entity.Property(e => e.ViolationPoints)
+                .HasDefaultValue(0)
+                .HasColumnName("violation_points");
+            entity.Property(e => e.IsFlaggedForReview)
+                .HasDefaultValue(false)
+                .HasColumnName("is_flagged_for_review");
+
+            entity.HasIndex(e => e.ModerationLevel, "users_moderation_level_idx");
+            entity.HasIndex(e => e.IsFlaggedForReview, "users_is_flagged_for_review_idx");
+
+            entity.HasOne(d => d.ModeratedByAdmin)
+                .WithMany()
+                .HasForeignKey(d => d.ModeratedByAdminId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("users_moderated_by_admin_id_fkey");
         }
 
 

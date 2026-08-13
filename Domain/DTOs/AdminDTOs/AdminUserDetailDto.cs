@@ -25,5 +25,12 @@ namespace linksy_backend_api.Core.DTOs.AdminDTOs
         public List<RoleDto> Roles { get; set; } = new();
         public int MessageCount { get; set; }
         public int FriendCount { get; set; }
+
+        public string ModerationLevel { get; set; } = "none";
+        public string? ModerationReason { get; set; }
+        public DateTime? ModerationExpiresAt { get; set; }
+        public DateTime? ModeratedAt { get; set; }
+        public int ViolationPoints { get; set; }
+        public bool IsFlaggedForReview { get; set; }
     }
 }

@@ -30,6 +30,7 @@ namespace linksy_backend_api.Services
         private readonly IFileService _fileService;
         private readonly ICacheService _cached;
         private readonly INotificationService _notificationService;
+        private readonly IDirectContactPrivacyService _directContactPrivacy;
         public ChatroomService(
             IUnitOfWork unitOfWork,
             ILogger<ChatroomService> logger,
@@ -37,7 +38,8 @@ namespace linksy_backend_api.Services
             IHubContext<ChatHub> hubContext,
             IFileService fileService,
             ICacheService cached,
-            INotificationService notificationService)
+            INotificationService notificationService,
+            IDirectContactPrivacyService directContactPrivacy)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
@@ -46,6 +48,7 @@ namespace linksy_backend_api.Services
             _fileService = fileService;
             _cached = cached;
             _notificationService = notificationService;
+            _directContactPrivacy = directContactPrivacy;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -63,6 +66,8 @@ namespace linksy_backend_api.Services
             var existingChatroom = await _unitOfWork.ChatroomRepository.GetDirectChatroomAsync(userId, otherUserId);
             if (existingChatroom != null)
                 return await MapToChatroomResponseAsync(existingChatroom, userId);
+
+            await _directContactPrivacy.EnsureCanContactUserAsync(userId, otherUserId, "message");
 
             await _unitOfWork.BeginTransactionAsync();
             try
@@ -497,6 +502,72 @@ namespace linksy_backend_api.Services
             {
                 Success = true,
                 Message = isArchived ? "Đã lưu trữ phòng chat." : "Đã bỏ lưu trữ phòng chat."
+            };
+        }
+
+        public async Task<ApiResponseDto> PinChatroomAsync(Guid userId, Guid chatroomId, bool isPinned)
+        {
+            var member = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId)
+                ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
+
+            member.IsPinned = isPinned;
+            member.PinnedAt = isPinned ? DateTime.UtcNow : null;
+            _unitOfWork.ChatroomMembers.Update(member);
+            await _unitOfWork.SaveChangesAsync();
+            await InvalidateChatroomListCacheAsync(userId);
+
+            return new ApiResponseDto
+            {
+                Success = true,
+                Message = isPinned ? "Đã ghim hội thoại." : "Đã bỏ ghim hội thoại."
+            };
+        }
+
+        public async Task<ApiResponseDto> MuteChatroomAsync(
+            Guid userId, Guid chatroomId, bool isMuted, DateTime? muteUntil = null)
+        {
+            var member = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId)
+                ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
+
+            member.IsMuted = isMuted;
+            member.MutedUntil = isMuted ? muteUntil : null;
+            member.NotificationPreference = isMuted ? "mute" : "all";
+            _unitOfWork.ChatroomMembers.Update(member);
+            await _unitOfWork.SaveChangesAsync();
+            await InvalidateChatroomListCacheAsync(userId);
+
+            return new ApiResponseDto
+            {
+                Success = true,
+                Message = isMuted ? "Đã tắt thông báo hội thoại." : "Đã bật lại thông báo hội thoại.",
+                Data = new
+                {
+                    IsMuted = isMuted,
+                    MutedUntil = member.MutedUntil,
+                    NotificationPreference = member.NotificationPreference
+                }
+            };
+        }
+
+        public async Task<ApiResponseDto> ClearConversationAsync(Guid userId, Guid chatroomId)
+        {
+            var member = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId)
+                ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
+
+            var clearedAt = DateTime.UtcNow;
+            member.ClearedAt = clearedAt;
+            member.LastReadAt = clearedAt;
+            member.IsPinned = false;
+            member.PinnedAt = null;
+            _unitOfWork.ChatroomMembers.Update(member);
+            await _unitOfWork.SaveChangesAsync();
+            await InvalidateChatroomListCacheAsync(userId);
+
+            return new ApiResponseDto
+            {
+                Success = true,
+                Message = "Đã xóa hội thoại khỏi danh sách của bạn.",
+                Data = new { ClearedAt = clearedAt }
             };
         }
 

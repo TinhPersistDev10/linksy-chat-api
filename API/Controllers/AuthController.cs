@@ -8,11 +8,13 @@ using linksy_backend_api.DTOs;
 using linksy_backend_api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.Controllers
 {
 
     // [Authorize]
+    [EnableRateLimiting("auth")]
     [ApiController]
     [Route("api/v1/[controller]")]
     public class AuthController : ControllerBase
@@ -95,6 +97,7 @@ namespace linksy_backend_api.Controllers
         /// <summary>
         /// Đăng nhập
         /// </summary>
+        
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
         {

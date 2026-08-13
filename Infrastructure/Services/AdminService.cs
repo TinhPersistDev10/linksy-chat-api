@@ -567,6 +567,156 @@ namespace linksy_backend_api.Infrastructure.Services
             }
         }
 
+        public async Task<ApiResponseDto> GetRegistrationStatsAsync(
+            string period,
+            DateTime? from,
+            DateTime? to)
+        {
+            try
+            {
+                var normalizedPeriod = (period ?? "day").Trim().ToLowerInvariant();
+                if (normalizedPeriod is not ("day" or "month" or "year"))
+                {
+                    return new ApiResponseDto
+                    {
+                        Success = false,
+                        Message = "Period must be day, month, or year",
+                        Data = ""
+                    };
+                }
+
+                var utcNow = DateTime.UtcNow;
+                DateTime rangeFrom;
+                DateTime rangeTo;
+
+                switch (normalizedPeriod)
+                {
+                    case "year":
+                        rangeTo = to?.ToUniversalTime() ?? new DateTime(utcNow.Year, 12, 31, 23, 59, 59, DateTimeKind.Utc);
+                        rangeFrom = from?.ToUniversalTime()
+                            ?? new DateTime(utcNow.Year - 4, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                        break;
+                    case "month":
+                        rangeTo = to?.ToUniversalTime() ?? utcNow;
+                        rangeFrom = from?.ToUniversalTime()
+                            ?? new DateTime(utcNow.Year, utcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-11);
+                        break;
+                    default: // day
+                        rangeTo = to?.ToUniversalTime() ?? utcNow.Date.AddDays(1).AddTicks(-1);
+                        if (rangeTo.Kind != DateTimeKind.Utc)
+                            rangeTo = DateTime.SpecifyKind(rangeTo, DateTimeKind.Utc);
+                        rangeFrom = from?.ToUniversalTime()
+                            ?? utcNow.Date.AddDays(-29);
+                        if (rangeFrom.Kind != DateTimeKind.Utc)
+                            rangeFrom = DateTime.SpecifyKind(rangeFrom, DateTimeKind.Utc);
+                        break;
+                }
+
+                if (rangeFrom > rangeTo)
+                {
+                    return new ApiResponseDto
+                    {
+                        Success = false,
+                        Message = "From date must be before or equal to To date",
+                        Data = ""
+                    };
+                }
+
+                var users = await _unitOfWork.Users.Query()
+                    .Where(u => u.CreatedAt != null &&
+                                u.CreatedAt >= rangeFrom &&
+                                u.CreatedAt <= rangeTo)
+                    .Select(u => u.CreatedAt!.Value)
+                    .ToListAsync();
+
+                var buckets = new List<RegistrationBucketDto>();
+
+                if (normalizedPeriod == "day")
+                {
+                    var cursor = rangeFrom.Date;
+                    var end = rangeTo.Date;
+                    var grouped = users
+                        .GroupBy(d => d.Date)
+                        .ToDictionary(g => g.Key, g => g.Count());
+
+                    while (cursor <= end)
+                    {
+                        buckets.Add(new RegistrationBucketDto
+                        {
+                            Label = cursor.ToString("yyyy-MM-dd"),
+                            PeriodStart = DateTime.SpecifyKind(cursor, DateTimeKind.Utc),
+                            Count = grouped.TryGetValue(cursor, out var c) ? c : 0
+                        });
+                        cursor = cursor.AddDays(1);
+                    }
+                }
+                else if (normalizedPeriod == "month")
+                {
+                    var cursor = new DateTime(rangeFrom.Year, rangeFrom.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                    var end = new DateTime(rangeTo.Year, rangeTo.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                    var grouped = users
+                        .GroupBy(d => new DateTime(d.Year, d.Month, 1))
+                        .ToDictionary(g => g.Key, g => g.Count());
+
+                    while (cursor <= end)
+                    {
+                        var key = new DateTime(cursor.Year, cursor.Month, 1);
+                        buckets.Add(new RegistrationBucketDto
+                        {
+                            Label = cursor.ToString("yyyy-MM"),
+                            PeriodStart = cursor,
+                            Count = grouped.TryGetValue(key, out var c) ? c : 0
+                        });
+                        cursor = cursor.AddMonths(1);
+                    }
+                }
+                else
+                {
+                    var startYear = rangeFrom.Year;
+                    var endYear = rangeTo.Year;
+                    var grouped = users
+                        .GroupBy(d => d.Year)
+                        .ToDictionary(g => g.Key, g => g.Count());
+
+                    for (var year = startYear; year <= endYear; year++)
+                    {
+                        buckets.Add(new RegistrationBucketDto
+                        {
+                            Label = year.ToString(),
+                            PeriodStart = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                            Count = grouped.TryGetValue(year, out var c) ? c : 0
+                        });
+                    }
+                }
+
+                var stats = new RegistrationStatsDto
+                {
+                    Period = normalizedPeriod,
+                    From = rangeFrom,
+                    To = rangeTo,
+                    TotalRegistrations = users.Count,
+                    Buckets = buckets
+                };
+
+                return new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "Registration statistics retrieved successfully",
+                    Data = stats
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting registration statistics");
+                return new ApiResponseDto
+                {
+                    Success = false,
+                    Message = "Failed to retrieve registration statistics",
+                    Data = ""
+                };
+            }
+        }
+
         public async Task<ApiResponseDto> GetUserDetailAsync(Guid userId)
         {
             try
@@ -616,7 +766,13 @@ namespace linksy_backend_api.Infrastructure.Services
                         AssignedAt = ur.AssignedAt
                     }).ToList(),
                     MessageCount = messageCount,
-                    FriendCount = friendCount
+                    FriendCount = friendCount,
+                    ModerationLevel = user.ModerationLevel ?? "none",
+                    ModerationReason = user.ModerationReason,
+                    ModerationExpiresAt = user.ModerationExpiresAt,
+                    ModeratedAt = user.ModeratedAt,
+                    ViolationPoints = user.ViolationPoints,
+                    IsFlaggedForReview = user.IsFlaggedForReview
                 };
 
                 return new ApiResponseDto

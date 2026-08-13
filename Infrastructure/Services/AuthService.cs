@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.Responses.Auth;
+using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.Auth;
 using linksy_backend_api.DTOs.UserDTO;
@@ -23,18 +25,21 @@ namespace linksy_backend_api.Services
         private readonly IEmailService _emailService;
         private readonly IJwtService _jwtService;
         private readonly ICacheService _cache;
+        private readonly IUserModerationService _moderationService;
         private readonly ILogger<AuthService> _logger;
         public AuthService(
             IUnitOfWork unitOfWork,
             IEmailService emailService,
             IJwtService jwtService,
             ICacheService cache,
+            IUserModerationService moderationService,
             ILogger<AuthService> logger)
         {
             _unitOfWork = unitOfWork;
             _emailService = emailService;
             _jwtService = jwtService;
             _cache = cache;
+            _moderationService = moderationService;
             _logger = logger;
         }   
 
@@ -103,7 +108,8 @@ namespace linksy_backend_api.Services
                 IsEmailVerified = user.IsEmailVerified ?? false,
                 CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
                 LastLoginAt = user.LastLoginAt,
-                Roles = roles
+                Roles = roles,
+                Moderation = _moderationService.ToStatusDto(user)
             };
         }
 
@@ -155,7 +161,29 @@ namespace linksy_backend_api.Services
                 throw exception;
             }
 
-            // Kiểm tra active
+            await _moderationService.RefreshExpiredModerationAsync(user, save: true);
+
+            var moderationLevel = _moderationService.GetEffectiveLevel(user);
+            if (ModerationLevels.BlocksLogin(moderationLevel))
+            {
+                if (moderationLevel == ModerationLevels.PermanentLock)
+                {
+                    throw new Exception(
+                        "Tài khoản đã bị khóa vĩnh viễn do vi phạm tiêu chuẩn cộng đồng." +
+                        (string.IsNullOrWhiteSpace(user.ModerationReason)
+                            ? ""
+                            : $" Lý do: {user.ModerationReason}"));
+                }
+
+                var until = user.ModerationExpiresAt?.ToString("dd/MM/yyyy HH:mm") ?? "không xác định";
+                throw new Exception(
+                    $"Tài khoản đang bị khóa tạm thời đến {until} UTC." +
+                    (string.IsNullOrWhiteSpace(user.ModerationReason)
+                        ? ""
+                        : $" Lý do: {user.ModerationReason}"));
+            }
+
+            // Kiểm tra active (deactivate thủ công / permanent lock)
             if (user.IsActive != true)
                 throw new Exception("Tài khoản đã bị vô hiệu hóa");
 

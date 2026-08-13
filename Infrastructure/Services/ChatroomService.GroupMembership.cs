@@ -66,6 +66,10 @@ public partial class ChatroomService
                     membership.RemovedBy = null;
                     membership.IsMuted = false;
                     membership.MutedUntil = null;
+                    membership.NotificationPreference = "all";
+                    membership.ClearedAt = null;
+                    membership.IsPinned = false;
+                    membership.PinnedAt = null;
                     _unitOfWork.ChatroomMembers.Update(membership);
                     await ResetMembershipPermissionsAsync(membership.MemberId);
                 }

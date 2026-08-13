@@ -37,6 +37,9 @@ namespace linksy_backend_api.Services.IServices
 
         
         Task<ApiResponseDto> ArchiveChatroomAsync(Guid userId, Guid chatroomId, bool isArchived);
+        Task<ApiResponseDto> PinChatroomAsync(Guid userId, Guid chatroomId, bool isPinned);
+        Task<ApiResponseDto> MuteChatroomAsync(Guid userId, Guid chatroomId, bool isMuted, DateTime? muteUntil = null);
+        Task<ApiResponseDto> ClearConversationAsync(Guid userId, Guid chatroomId);
         Task<AvatarResponse> DeleteGroupAvatarAsync(Guid userId, Guid chatroomId);
     }
 }

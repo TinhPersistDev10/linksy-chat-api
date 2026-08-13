@@ -6,7 +6,7 @@ using linksy_backend_api.Domain.DTOs.Responses.MemberPermission;
 using linksy_backend_api.Domain.Entities.Models;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Infrastructure.Helpers;
-using linksy_backend_api.Infrastructure.Services.Results;
+using linksy_backend_api.Domain.Results;
 using linksy_backend_api.Repositories.IRepositories;
 
 namespace linksy_backend_api.Infrastructure.Services

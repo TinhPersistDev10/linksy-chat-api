@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.AdminDTOs;
 using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.DTOs;
+using linksy_backend_api.DTOs.Moderation;
+using linksy_backend_api.DTOs.Report;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,11 +18,19 @@ namespace linksy_backend_api.API.Controllers
     public class AdminController : BaseApiController
     {
         private readonly IAdminService _adminService;
+        private readonly IUserReportService _reportService;
+        private readonly IUserModerationService _moderationService;
         private readonly ILogger<AdminController> _logger;
 
-        public AdminController(IAdminService adminService, ILogger<AdminController> logger)
+        public AdminController(
+            IAdminService adminService,
+            IUserReportService reportService,
+            IUserModerationService moderationService,
+            ILogger<AdminController> logger)
         {
             _adminService = adminService;
+            _reportService = reportService;
+            _moderationService = moderationService;
             _logger = logger;
         }
 
@@ -331,6 +341,93 @@ namespace linksy_backend_api.API.Controllers
             }
 
             var result = await _adminService.GetRecentActivitiesAsync(limit);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Registration counts filtered by day / month / year
+        /// GET /api/v1/admin/statistics/registrations?period=day|month|year&amp;from=&amp;to=
+        /// </summary>
+        [HttpGet("statistics/registrations")]
+        public async Task<ActionResult<ApiResponseDto>> GetRegistrationStats(
+            [FromQuery] string period = "day",
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null)
+        {
+            var result = await _adminService.GetRegistrationStatsAsync(period, from, to);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
+        #endregion
+
+        #region User Reports
+
+        /// <summary>
+        /// List account reports for moderation
+        /// GET /api/v1/admin/reports?status=pending&amp;page=1&amp;pageSize=20
+        /// </summary>
+        [HttpGet("reports")]
+        public async Task<ActionResult<ApiResponseDto>> GetReports(
+            [FromQuery] string? status = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            var result = await _reportService.GetReportsForAdminAsync(status, page, pageSize);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// GET /api/v1/admin/reports/{reportId}
+        /// </summary>
+        [HttpGet("reports/{reportId:guid}")]
+        public async Task<ActionResult<ApiResponseDto>> GetReport(Guid reportId)
+        {
+            var result = await _reportService.GetReportByIdAsync(reportId);
+            if (!result.Success)
+                return NotFound(result);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Update report status (review / resolve / dismiss)
+        /// PATCH /api/v1/admin/reports/{reportId}
+        /// </summary>
+        [HttpPatch("reports/{reportId:guid}")]
+        public async Task<ActionResult<ApiResponseDto>> UpdateReport(
+            Guid reportId,
+            [FromBody] UpdateReportStatusRequest request)
+        {
+            var result = await _reportService.UpdateReportStatusAsync(
+                CurrentUserId, reportId, request);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
+        #endregion
+
+        #region User Moderation
+
+        /// <summary>
+        /// Apply / lift moderation on a user
+        /// POST /api/v1/admin/users/{userId}/moderation
+        /// </summary>
+        [HttpPost("users/{userId:guid}/moderation")]
+        public async Task<ActionResult<ApiResponseDto>> ApplyModeration(
+            Guid userId,
+            [FromBody] ApplyModerationRequest request)
+        {
+            var selfReject = RejectIfSelf(userId, "moderate");
+            if (selfReject != null)
+                return selfReject;
+
+            var result = await _moderationService.ApplyAsync(CurrentUserId, userId, request);
+            if (!result.Success)
+                return BadRequest(result);
             return Ok(result);
         }
 

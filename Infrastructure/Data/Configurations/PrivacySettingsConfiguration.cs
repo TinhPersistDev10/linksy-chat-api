@@ -41,6 +41,10 @@ namespace linksy_backend_api.Infrastructure.Data.Configurations
                 .HasDefaultValueSql("'everyone'::character varying")
                 .HasColumnType("character varying")
                 .HasColumnName("who_can_add_to_groups");
+            entity.Property(e => e.WhoCanMessageMe)
+                .HasDefaultValueSql("'everyone'::character varying")
+                .HasColumnType("character varying")
+                .HasColumnName("who_can_message_me");
 
             entity.HasOne(d => d.User)
                 .WithOne(p => p.PrivacySettings)

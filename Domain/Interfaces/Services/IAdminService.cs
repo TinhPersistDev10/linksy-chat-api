@@ -27,6 +27,7 @@ namespace linksy_backend_api.Core.Interfaces.Services
         // Statistics
         Task<ApiResponseDto> GetStatisticsAsync();
         Task<ApiResponseDto> GetRecentActivitiesAsync(int limit);
+        Task<ApiResponseDto> GetRegistrationStatsAsync(string period, DateTime? from, DateTime? to);
 
 
         Task<ApiResponseDto> HardDeleteUserAsync(Guid userId);

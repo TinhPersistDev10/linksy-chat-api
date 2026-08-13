@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using linksy_backend_api.Domain.Enums;
 
-namespace linksy_backend_api.Domain.Interfaces.Repositories
+namespace linksy_backend_api.Domain.Interfaces.Services
 {
     public interface IChatroomAccessService
     {

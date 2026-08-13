@@ -1,9 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-
-namespace linksy_backend_api.Infrastructure.Services.Results
+namespace linksy_backend_api.Domain.Results
 {
     public class BatchUpdateResult
     {
@@ -11,11 +6,10 @@ namespace linksy_backend_api.Infrastructure.Services.Results
         public int UpdatedCount { get; init; }
         public List<string> Errors { get; init; } = new();
 
-        // Factory helpers — tránh tạo object với trạng thái không hợp lệ
         public static BatchUpdateResult Success(int count, List<string> errors) => new()
         {
             Message = $"Đã cập nhật {count} permission(s)" +
-                           (errors.Any() ? $", bỏ qua {errors.Count} lỗi" : string.Empty),
+                           (errors.Count > 0 ? $", bỏ qua {errors.Count} lỗi" : string.Empty),
             UpdatedCount = count,
             Errors = errors
         };

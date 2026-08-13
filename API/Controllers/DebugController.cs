@@ -7,10 +7,12 @@ using System.Threading.Tasks;
 using linksy_backend_api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.Controllers
 {
     // [Authorize]
+    [EnableRateLimiting("public")]
     [ApiController]
     [Route("api/v1/[controller]")]
     public class DebugController : ControllerBase

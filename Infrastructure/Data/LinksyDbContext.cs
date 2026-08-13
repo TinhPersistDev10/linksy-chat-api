@@ -47,6 +47,7 @@ public partial class LinksyDbContext : DbContext
     // Thêm vào LinksyDbContext.cs
     public virtual DbSet<CallLog> CallLogs { get; set; }
     public virtual DbSet<CallParticipant> CallParticipants { get; set; }
+    public virtual DbSet<UserReport> UserReports { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -94,6 +95,7 @@ public partial class LinksyDbContext : DbContext
         // Trong OnModelCreating:
         modelBuilder.ApplyConfiguration(new CallLogConfiguration());
         modelBuilder.ApplyConfiguration(new CallParticipantConfiguration());
+        modelBuilder.ApplyConfiguration(new UserReportConfiguration());
         OnModelCreatingPartial(modelBuilder);
     }
 

@@ -16,6 +16,8 @@ namespace linksy_backend_api.Domain.Entities.Models
         public string ProfilePhotoVisibility { get; set; } = null!;  // everyone | friends | nobody
         public string StatusVisibility { get; set; } = null!;
         public string WhoCanAddToGroups { get; set; } = null!;
+        /// <summary>everyone | friends — also applies to 1-1 calls.</summary>
+        public string WhoCanMessageMe { get; set; } = null!;
 
         // Navigation
         public virtual User User { get; set; } = null!;

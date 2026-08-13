@@ -7,12 +7,14 @@ using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
     [Route("api/v1/[controller]")]
     [Authorize]
+    [EnableRateLimiting("upload")]
     public class AvatarController : ControllerBase
     {
         private readonly IUserService _userService;

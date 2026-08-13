@@ -3,12 +3,14 @@ using linksy_backend_api.Core.DTOs.Requests.Notifications;
 using linksy_backend_api.Core.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
     [Route("api/v1/notifications")]
     [Authorize]
+    [EnableRateLimiting("api")]
     public class NotificationsController : ControllerBase
     {
         private readonly INotificationService _notificationService;

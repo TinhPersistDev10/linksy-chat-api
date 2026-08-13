@@ -1,4 +1,6 @@
+using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Entities.Models;
+using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.Domain.Interfaces.Repositories;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Repositories.IRepositories;
@@ -17,17 +19,37 @@ public sealed class CallService : ICallService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChatroomAccessService _chatroomAccessService;
+    private readonly IDirectContactPrivacyService _directContactPrivacy;
+    private readonly IUserModerationService _userModeration;
 
-    public CallService(IUnitOfWork unitOfWork, IChatroomAccessService chatroomAccessService)
+    public CallService(
+        IUnitOfWork unitOfWork,
+        IChatroomAccessService chatroomAccessService,
+        IDirectContactPrivacyService directContactPrivacy,
+        IUserModerationService userModeration)
     {
         _unitOfWork = unitOfWork;
         _chatroomAccessService = chatroomAccessService;
+        _directContactPrivacy = directContactPrivacy;
+        _userModeration = userModeration;
     }
 
     public async Task<CallLog> InitiateCallAsync(Guid callerId, Guid chatroomId, string callType)
     {
         callType = NormalizeCallType(callType);
         await _chatroomAccessService.EnsureMemberAsync(chatroomId, callerId);
+
+        var caller = await _unitOfWork.Users.GetByIdAsync(callerId)
+            ?? throw new UnauthorizedAccessException("Người dùng không tồn tại.");
+        await _userModeration.RefreshExpiredModerationAsync(caller, save: true);
+        if (!_userModeration.CanStartCalls(caller))
+        {
+            var until = caller.ModerationExpiresAt?.ToString("dd/MM/yyyy HH:mm");
+            throw new UnauthorizedAccessException(
+                $"Tài khoản đang bị hạn chế gọi{(until != null ? $" đến {until} UTC" : "")}.");
+        }
+
+        await _directContactPrivacy.EnsureCanContactInChatroomAsync(callerId, chatroomId, "call");
 
         var memberIds = await _unitOfWork.ChatroomMemberRepository
             .GetActiveMemberIdsExceptAsync(chatroomId, callerId);

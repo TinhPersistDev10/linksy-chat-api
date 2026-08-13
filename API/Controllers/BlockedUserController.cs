@@ -2,9 +2,12 @@ using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.DTOs.Block;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.API.Controllers
-{   [Authorize]
+{
+    [Authorize]
+    [EnableRateLimiting("api")]
     [ApiController]
     [Route("api/v1/[controller]")]
     public class BlockedUserController : ControllerBase
@@ -79,5 +82,26 @@ namespace linksy_backend_api.API.Controllers
             }
         }
 
+        /// Kiểm tra trạng thái chặn 2 chiều với user khác
+        [HttpGet("status/{otherUserId:guid}")]
+        public async Task<IActionResult> GetBlockStatus(Guid otherUserId)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst("user_id")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { message = "Invalid user ID" });
+                }
+
+                var (iBlocked, blockedBy) = await _blockedService.GetBlockStatusAsync(userId, otherUserId);
+                return Ok(new { iBlocked, blockedBy });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting block status with {OtherUserId}", otherUserId);
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }
