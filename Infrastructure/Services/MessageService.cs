@@ -232,13 +232,18 @@ namespace linksy_backend_api.Infrastructure.Services
 
             var hasText = !string.IsNullOrWhiteSpace(messageDto.MessageText);
             var hasAttachments = messageDto.Attachments is not null && messageDto.Attachments.Any();
-            var allowedMessageTypes = new[] { "text", "image", "video", "file", "audio", "poll" };
+            var allowedMessageTypes = new[] { "text", "image", "video", "file", "audio", "poll", "sticker" };
             if (messageDto.MessageType == "text" && !hasText)
                 throw new ArgumentException("Nội dung tin nhắn không được để trống.");
 
             if (messageDto.MessageType == "poll")
             {
                 // poll payload validated below; no attachments required
+            }
+            else if (messageDto.MessageType == "sticker")
+            {
+                if (!hasText && !hasAttachments)
+                    throw new ArgumentException("Sticker không được để trống.");
             }
             else if (messageDto.MessageType != "text" && !hasAttachments)
                 throw new ArgumentException("Attachment is required.");
