@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.Responses.Auth;
 using linksy_backend_api.DTOs;
+using linksy_backend_api.Domain.Options;
 using linksy_backend_api.Infrastructure.Exceptions;
 using linksy_backend_api.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -14,8 +15,6 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace linksy_backend_api.Controllers
 {
 
-    // [Authorize]
-    [EnableRateLimiting("auth")]
     [ApiController]
     [Route("api/v1/[controller]")]
     public class AuthController : ControllerBase
@@ -36,6 +35,7 @@ namespace linksy_backend_api.Controllers
         /// </summary>
         /// 
         [HttpPost("register")]
+        [EnableRateLimiting(RateLimitingOptions.AuthSensitivePolicy)]
         public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
         {
             try
@@ -63,6 +63,7 @@ namespace linksy_backend_api.Controllers
         /// Xác thực OTP khi đăng ký
         /// </summary>
         [HttpPost("verify-email")]
+        [EnableRateLimiting(RateLimitingOptions.AuthSensitivePolicy)]
         public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailRequestDto request)
         {
             try
@@ -89,6 +90,7 @@ namespace linksy_backend_api.Controllers
         /// Gửi lại OTP
         /// </summary>
         [HttpPost("resend-otp")]
+        [EnableRateLimiting(RateLimitingOptions.AuthSensitivePolicy)]
         public async Task<IActionResult> ResendOtp([FromBody] ResendOtpRequestDto request)
         {
             try
@@ -108,6 +110,7 @@ namespace linksy_backend_api.Controllers
         /// </summary>
         
         [HttpPost("login")]
+        [EnableRateLimiting(RateLimitingOptions.AuthLoginPolicy)]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
         {
             try
@@ -192,6 +195,7 @@ namespace linksy_backend_api.Controllers
         }
         // [Authorize]
         [HttpPost("logout")]
+        [EnableRateLimiting(RateLimitingOptions.ApiPolicy)]
         public async Task<IActionResult> Logout()
         {
             try
@@ -232,6 +236,7 @@ namespace linksy_backend_api.Controllers
         /// Refresh token
         /// </summary>
         [HttpPost("refresh-token")]
+        [EnableRateLimiting(RateLimitingOptions.ApiPolicy)]
         public async Task<IActionResult> RefreshToken()
         {
             try
@@ -276,6 +281,7 @@ namespace linksy_backend_api.Controllers
 
         /// Quên mật khẩu - Gửi OTP
         [HttpPost("forgot-password")]
+        [EnableRateLimiting(RateLimitingOptions.AuthSensitivePolicy)]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto request)
         {
             try
@@ -294,6 +300,7 @@ namespace linksy_backend_api.Controllers
         /// Đặt lại mật khẩu với OTP
         /// </summary>
         [HttpPost("reset-password")]
+        [EnableRateLimiting(RateLimitingOptions.AuthSensitivePolicy)]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequestDto request)
         {
             try
@@ -314,6 +321,7 @@ namespace linksy_backend_api.Controllers
 
         [Authorize]
         [HttpPost("change-password")]
+        [EnableRateLimiting(RateLimitingOptions.ApiPolicy)]
         public async Task<ActionResult<ApiResponseDto>> ChangePassword([FromBody] ChangePasswordRequest request)
         {
             try

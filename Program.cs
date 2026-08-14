@@ -7,6 +7,7 @@ using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.Domain.Interfaces.Repositories;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Hubs;
+using linksy_backend_api.Domain.Options;
 using linksy_backend_api.Infrastructure.Filters;
 using linksy_backend_api.Infrastructure.Repositories;
 using linksy_backend_api.Infrastructure.Services;
@@ -369,77 +370,116 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         options.KnownProxies.Clear();
     }
 });
+var rateLimits = builder.Configuration
+    .GetSection(RateLimitingOptions.SectionName)
+    .Get<RateLimitingOptions>() ?? new RateLimitingOptions();
+
+builder.Services.Configure<RateLimitingOptions>(
+    builder.Configuration.GetSection(RateLimitingOptions.SectionName));
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // Auth: login/register/OTP — 5 req/min/IP
-    options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: GetClientIp(httpContext),
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 5,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-            }));
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        if (IsRateLimitExempt(httpContext))
+            return RateLimitPartition.GetNoLimiter("exempt");
 
-    // Authenticated API — 100 req/min/user (fallback IP)
-    options.AddPolicy("api", httpContext =>
+        return RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: $"global:{GetClientIp(httpContext)}",
+            factory: _ => SlidingWindow(rateLimits.Global));
+    });
+
+    // Login brute-force — per IP, separate from OTP/refresh
+    options.AddPolicy(RateLimitingOptions.AuthLoginPolicy, httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: $"login:{GetClientIp(httpContext)}",
+            factory: _ => SlidingWindow(rateLimits.AuthLogin)));
+
+    // Register / OTP / forgot-reset — per IP (email flooding)
+    options.AddPolicy(RateLimitingOptions.AuthSensitivePolicy, httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: $"auth-sensitive:{GetClientIp(httpContext)}",
+            factory: _ => SlidingWindow(rateLimits.AuthSensitive)));
+
+    // Authenticated API — per user, fallback IP
+    options.AddPolicy(RateLimitingOptions.ApiPolicy, httpContext =>
         RateLimitPartition.GetSlidingWindowLimiter(
             partitionKey: GetAuthenticatedKey(httpContext),
-            factory: _ => new SlidingWindowRateLimiterOptions
-            {
-                PermitLimit = 100,
-                Window = TimeSpan.FromMinutes(1),
-                SegmentsPerWindow = 4,
-                QueueLimit = 0,
-            }));
+            factory: _ => SlidingWindow(rateLimits.Api)));
 
-    // Uploads — 10 req / 10 min / user
-    options.AddPolicy("upload", httpContext =>
+    // Uploads — per user
+    options.AddPolicy(RateLimitingOptions.UploadPolicy, httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: GetAuthenticatedKey(httpContext),
+            partitionKey: $"upload:{GetAuthenticatedKey(httpContext)}",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(10),
+                PermitLimit = rateLimits.Upload.PermitLimit,
+                Window = TimeSpan.FromSeconds(rateLimits.Upload.WindowSeconds),
                 QueueLimit = 0,
+                AutoReplenishment = true
             }));
 
-    // Public/unauthenticated endpoints — 30 req/min/IP
-    options.AddPolicy("public", httpContext =>
+    // Public/unauthenticated endpoints — per IP
+    options.AddPolicy(RateLimitingOptions.PublicPolicy, httpContext =>
         RateLimitPartition.GetSlidingWindowLimiter(
-            partitionKey: GetClientIp(httpContext),
-            factory: _ => new SlidingWindowRateLimiterOptions
-            {
-                PermitLimit = 30,
-                Window = TimeSpan.FromMinutes(1),
-                SegmentsPerWindow = 4,
-                QueueLimit = 0,
-            }));
+            partitionKey: $"public:{GetClientIp(httpContext)}",
+            factory: _ => SlidingWindow(rateLimits.Public)));
 
     options.OnRejected = async (context, token) =>
     {
-        var response = context.HttpContext.Response;
-        response.StatusCode = StatusCodes.Status429TooManyRequests;
+        var http = context.HttpContext;
+        var logger = http.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("RateLimiter");
 
         int? retryAfterSeconds = null;
         if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
         {
-            retryAfterSeconds = (int)retryAfter.TotalSeconds;
-            response.Headers.RetryAfter = retryAfterSeconds.Value.ToString();
+            retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+            http.Response.Headers.RetryAfter = retryAfterSeconds.Value.ToString();
         }
 
-        await response.WriteAsJsonAsync(new
+        logger.LogWarning(
+            "Rate limit exceeded. Path={Path} Method={Method} Ip={Ip} RetryAfter={RetryAfter}",
+            http.Request.Path,
+            http.Request.Method,
+            GetClientIp(http),
+            retryAfterSeconds);
+
+        http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await http.Response.WriteAsJsonAsync(new
         {
             success = false,
             code = "TOO_MANY_REQUESTS",
-            message = "Bạn gửi quá nhiều request. Vui lòng thử lại sau.",
+            message = retryAfterSeconds is > 0
+                ? $"Bạn gửi quá nhiều request. Vui lòng thử lại sau {retryAfterSeconds} giây."
+                : "Bạn gửi quá nhiều request. Vui lòng thử lại sau.",
             retryAfterSeconds
         }, token);
     };
 });
+
+static SlidingWindowRateLimiterOptions SlidingWindow(RateLimitPolicyOptions policy) => new()
+{
+    PermitLimit = Math.Max(1, policy.PermitLimit),
+    Window = TimeSpan.FromSeconds(Math.Max(1, policy.WindowSeconds)),
+    SegmentsPerWindow = Math.Max(1, policy.SegmentsPerWindow),
+    QueueLimit = 0,
+    AutoReplenishment = true
+};
+
+static bool IsRateLimitExempt(HttpContext ctx)
+{
+    if (HttpMethods.IsOptions(ctx.Request.Method))
+        return true;
+
+    var path = ctx.Request.Path;
+    return path.StartsWithSegments("/health")
+        || path.StartsWithSegments("/swagger")
+        || path.StartsWithSegments("/hubs");
+}
 
 // Prefer RemoteIpAddress (rewritten by UseForwardedHeaders when behind a trusted proxy).
 static string GetClientIp(HttpContext ctx) =>
