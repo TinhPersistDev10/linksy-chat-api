@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.Responses.Auth;
 using linksy_backend_api.DTOs;
+using linksy_backend_api.Infrastructure.Exceptions;
 using linksy_backend_api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -42,6 +43,14 @@ namespace linksy_backend_api.Controllers
                 var result = await _authService.RegisterAsync(request);
 
                 return Ok(result);
+            }
+            catch (RegisterConflictException ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message,
+                    errors = ex.FieldErrors
+                });
             }
             catch (Exception ex)
             {
