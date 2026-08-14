@@ -161,7 +161,29 @@ namespace linksy_backend_api.Infrastructure.Services
                 result.Add(response);
             }
 
+            await ApplyReplyCountsAsync(result);
             return result;
+        }
+
+        private async Task ApplyReplyCountsAsync(List<MessageResponse> responses)
+        {
+            if (responses.Count == 0) return;
+
+            var messageIds = responses.Select(r => r.MessageId).ToList();
+            var counts = await _unitOfWork.Messages.Query()
+                .Where(m =>
+                    m.ParentMessageId != null &&
+                    messageIds.Contains(m.ParentMessageId.Value) &&
+                    (m.IsDeleted == null || m.IsDeleted == false))
+                .GroupBy(m => m.ParentMessageId!.Value)
+                .Select(g => new { ParentId = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var countByParent = counts.ToDictionary(x => x.ParentId, x => x.Count);
+            foreach (var response in responses)
+            {
+                response.ReplyCount = countByParent.GetValueOrDefault(response.MessageId);
+            }
         }
 
         public async Task<List<MessageResponse>> GetRepliesAsync(Guid userId, Guid messageId)
@@ -183,18 +205,7 @@ namespace linksy_backend_api.Infrastructure.Services
             var replies = await _unitOfWork.MessageRepository
                 .GetRepliesAsync(messageId);
 
-            var result = new List<MessageResponse>();
-
-            foreach (var reply in replies)
-            {
-                result.Add(await MessageMapper.ToResponseAsync(
-                    reply,
-                    _unitOfWork,
-                    userId
-                ));
-            }
-
-            return result;
+            return await MapMessagesWithDeliveriesAsync(replies, userId);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -657,6 +668,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 MessageText = source.MessageText,
                 ParentMessageId = source.ParentMessageId,
                 ParentMessage = source.ParentMessage,
+                ReplyCount = source.ReplyCount,
                 IsEdited = source.IsEdited,
                 IsDeleted = source.IsDeleted,
                 IsOwn = false,
