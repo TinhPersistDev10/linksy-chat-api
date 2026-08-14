@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using linksy_backend_api.DTOs.Block;
+using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.FriendDTO;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
@@ -304,5 +304,99 @@ namespace linksy_backend_api.Controllers
         /// Block user
         /// </summary>
         
+        [HttpPost("invite-link")]
+        public async Task<IActionResult> CreateInviteLink()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst("user_id")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new ApiResponseDto { Success = false, Message = "Invalid user ID" });
+                }
+
+                var data = await _friendService.CreateInviteLinkAsync(userId);
+                return Ok(new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "Đã tạo liên kết mời kết bạn",
+                    Data = data
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating friend invite link");
+                return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+        }
+
+        [AllowAnonymous]
+        [HttpGet("invite/{token}")]
+        public async Task<IActionResult> GetInvitePreview(string token)
+        {
+            try
+            {
+                var data = await _friendService.GetInvitePreviewAsync(token);
+                return Ok(new ApiResponseDto
+                {
+                    Success = true,
+                    Message = "Invite preview",
+                    Data = data
+                });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting friend invite preview");
+                return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+        }
+
+        [HttpPost("invite/{token}/accept")]
+        public async Task<IActionResult> AcceptInvite(string token)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst("user_id")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new ApiResponseDto { Success = false, Message = "Invalid user ID" });
+                }
+
+                var data = await _friendService.AcceptInviteAsync(userId, token);
+                return Ok(new ApiResponseDto
+                {
+                    Success = true,
+                    Message = data.Status == "friends" || data.Status == "already_friends"
+                        ? "Đã trở thành bạn bè"
+                        : "Đã gửi lời mời kết bạn",
+                    Data = data
+                });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error accepting friend invite");
+                return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
+        }
     }
 }

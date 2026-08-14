@@ -53,6 +53,7 @@ namespace linksy_backend_api.Repositories
             FriendRequests = new Repository<FriendRequest>(_context);
             BlockedUsers = new Repository<BlockedUser>(_context);
             UserReports = new Repository<UserReport>(_context);
+            FriendInvites = new Repository<FriendInvite>(_context);
 
             Notifications = new Repository<Notification>(_context);
 
@@ -106,6 +107,7 @@ namespace linksy_backend_api.Repositories
         public IRepository<FriendRequest> FriendRequests { get; private set; } = null!;
         public IRepository<BlockedUser> BlockedUsers { get; private set; } = null!;
         public IRepository<UserReport> UserReports { get; private set; } = null!;
+        public IRepository<FriendInvite> FriendInvites { get; private set; } = null!;
         public IRepository<Notification> Notifications { get; private set; } = null!;
         public IRepository<UserSettings> UserSettingsRepo { get; private set; } = null!;
         public IRepository<NotificationSettings> NotificationSettingsRepo { get; private set; } = null!;

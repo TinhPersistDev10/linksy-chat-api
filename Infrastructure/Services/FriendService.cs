@@ -15,6 +15,8 @@ using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
 using linksy_backend_api.Services.IServices;
+using System.Security.Cryptography;
+using linksy_backend_api.Domain.Entities.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace linksy_backend_api.Services
@@ -522,6 +524,137 @@ namespace linksy_backend_api.Services
             }
         }
 
+
+        public async Task<FriendInviteLinkResponse> CreateInviteLinkAsync(Guid inviterId)
+        {
+            var now = DateTime.UtcNow;
+            var existing = await _unitOfWork.FriendInvites.Query()
+                .Where(invite =>
+                    invite.InviterId == inviterId &&
+                    !invite.IsUsed &&
+                    invite.ExpiresAt > now)
+                .OrderByDescending(invite => invite.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (existing != null)
+            {
+                return new FriendInviteLinkResponse
+                {
+                    Token = existing.Token,
+                    ExpiresAt = existing.ExpiresAt
+                };
+            }
+
+            var invite = new FriendInvite
+            {
+                Id = Guid.NewGuid(),
+                Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+                InviterId = inviterId,
+                ExpiresAt = now.AddDays(7),
+                IsUsed = false,
+                CreatedAt = now
+            };
+
+            await _unitOfWork.FriendInvites.AddAsync(invite);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new FriendInviteLinkResponse
+            {
+                Token = invite.Token,
+                ExpiresAt = invite.ExpiresAt
+            };
+        }
+
+        public async Task<FriendInvitePreviewResponse> GetInvitePreviewAsync(string token)
+        {
+            var invite = await FindValidInviteAsync(token, allowUsed: false);
+            var inviter = invite.Inviter
+                ?? await _unitOfWork.Users.GetByIdAsync(invite.InviterId)
+                ?? throw new KeyNotFoundException("Không tìm thấy người mời.");
+
+            return new FriendInvitePreviewResponse
+            {
+                UserId = inviter.UserId,
+                InviterId = inviter.UserId,
+                Username = inviter.Username,
+                Fullname = inviter.Fullname ?? inviter.Username,
+                Avatar = DefaultAvatarHelper.GetAvatarOrDefault(
+                    inviter.Avatar,
+                    inviter.UserId,
+                    username: inviter.Username,
+                    fullname: inviter.Fullname),
+                ExpiresAt = invite.ExpiresAt,
+                IsExpired = invite.ExpiresAt <= DateTime.UtcNow,
+                IsUsed = invite.IsUsed
+            };
+        }
+
+        public async Task<AcceptFriendInviteResponse> AcceptInviteAsync(Guid currentUserId, string token)
+        {
+            var invite = await FindValidInviteAsync(token, allowUsed: false);
+            if (invite.InviterId == currentUserId)
+                throw new InvalidOperationException("Không thể dùng lời mời của chính mình.");
+
+            var alreadyFriends = await _unitOfWork.FriendshipRepository
+                .AreFriendsAsync(currentUserId, invite.InviterId);
+            if (alreadyFriends)
+            {
+                return new AcceptFriendInviteResponse
+                {
+                    Status = "already_friends",
+                    InviterId = invite.InviterId
+                };
+            }
+
+            var fromInviter = await _unitOfWork.FriendRequestRepository
+                .GetRequestAsync(invite.InviterId, currentUserId);
+            if (fromInviter != null && fromInviter.Status == "pending")
+            {
+                await AcceptFriendRequestAsync(currentUserId, fromInviter.RequestId);
+                invite.IsUsed = true;
+                _unitOfWork.FriendInvites.Update(invite);
+                await _unitOfWork.SaveChangesAsync();
+                return new AcceptFriendInviteResponse
+                {
+                    Status = "friends",
+                    InviterId = invite.InviterId
+                };
+            }
+
+            await SendFriendRequestAsync(currentUserId, new SendFriendRequest
+            {
+                ReceiverId = invite.InviterId
+            });
+
+            invite.IsUsed = true;
+            _unitOfWork.FriendInvites.Update(invite);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new AcceptFriendInviteResponse
+            {
+                Status = "request_sent",
+                InviterId = invite.InviterId
+            };
+        }
+
+        private async Task<FriendInvite> FindValidInviteAsync(string token, bool allowUsed)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                throw new KeyNotFoundException("Không tìm thấy lời mời kết bạn.");
+
+            var invite = await _unitOfWork.FriendInvites.Query()
+                .Include(item => item.Inviter)
+                .FirstOrDefaultAsync(item => item.Token == token.Trim());
+
+            if (invite == null)
+                throw new KeyNotFoundException("Không tìm thấy lời mời kết bạn.");
+            if (!allowUsed && invite.IsUsed)
+                throw new InvalidOperationException("Lời mời đã được sử dụng.");
+            if (invite.ExpiresAt <= DateTime.UtcNow)
+                throw new InvalidOperationException("Lời mời đã hết hạn.");
+
+            return invite;
+        }
 
         public async Task<ApiResponseDto> UnfriendAsync(Guid userId, Guid friendId)
         {
