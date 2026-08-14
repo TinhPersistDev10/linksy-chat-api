@@ -32,6 +32,7 @@ namespace linksy_backend_api.Repositories.IRepositories
         IRepository<MessagePoll> MessagePolls { get; }
         IRepository<MessagePollOption> MessagePollOptions { get; }
         IRepository<MessagePollVote> MessagePollVotes { get; }
+        IRepository<ScheduledMessage> ScheduledMessages { get; }
         #endregion
 
         #region Call repositories

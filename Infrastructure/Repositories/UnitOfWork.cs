@@ -45,6 +45,7 @@ namespace linksy_backend_api.Repositories
             MessagePolls = new Repository<MessagePoll>(_context);
             MessagePollOptions = new Repository<MessagePollOption>(_context);
             MessagePollVotes = new Repository<MessagePollVote>(_context);
+            ScheduledMessages = new Repository<ScheduledMessage>(_context);
 
             CallLogs = new Repository<CallLog>(_context);
             CallParticipants = new Repository<CallParticipant>(_context);
@@ -101,6 +102,7 @@ namespace linksy_backend_api.Repositories
         public IRepository<MessagePoll> MessagePolls { get; private set; } = null!;
         public IRepository<MessagePollOption> MessagePollOptions { get; private set; } = null!;
         public IRepository<MessagePollVote> MessagePollVotes { get; private set; } = null!;
+        public IRepository<ScheduledMessage> ScheduledMessages { get; private set; } = null!;
         public IRepository<CallLog> CallLogs { get; private set; } = null!;
         public IRepository<CallParticipant> CallParticipants { get; private set; } = null!;
         public IRepository<Friendship> Friendships { get; private set; } = null!;
