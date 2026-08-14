@@ -21,6 +21,15 @@ public partial class ChatroomMember
     public DateTime? LastReadAt { get; set; }
     public int? MessageCount { get; set; }
 
+    /// <summary>Per-user pin in conversation list.</summary>
+    public bool IsPinned { get; set; }
+    public DateTime? PinnedAt { get; set; }
+
+    /// <summary>
+    /// Soft-clear: messages at/before this timestamp are hidden for this member only.
+    /// Conversation is omitted from the list until newer activity arrives.
+    /// </summary>
+    public DateTime? ClearedAt { get; set; }
 
     public DateTime? JoinedAt { get; set; }
     public Guid? AddedBy { get; set; }

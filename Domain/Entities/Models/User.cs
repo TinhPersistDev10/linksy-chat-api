@@ -40,6 +40,24 @@ public partial class User
 
     public DateTime? PasswordChangedAt { get; set; }
 
+    /// <summary>none | warning | restricted | temporary_lock | permanent_lock</summary>
+    public string ModerationLevel { get; set; } = "none";
+
+    public string? ModerationReason { get; set; }
+
+    public DateTime? ModerationExpiresAt { get; set; }
+
+    public DateTime? ModeratedAt { get; set; }
+
+    public Guid? ModeratedByAdminId { get; set; }
+
+    public int ViolationPoints { get; set; }
+
+    /// <summary>Auto-set when many pending reports arrive — review priority, not a lock.</summary>
+    public bool IsFlaggedForReview { get; set; }
+
+    public virtual User? ModeratedByAdmin { get; set; }
+
     public virtual ICollection<FriendRequest> SentFriendRequests { get; set; } = new List<FriendRequest>();
     public virtual ICollection<FriendRequest> ReceivedFriendRequests { get; set; } = new List<FriendRequest>();
     public virtual ICollection<AccessToken> AccessTokens { get; set; } = new List<AccessToken>();
@@ -78,5 +96,8 @@ public partial class User
     public virtual ICollection<MessageDelivery> MessageDeliveries { get; set; } = new List<MessageDelivery>();
     public virtual ICollection<MessageMention> MessageMentions { get; set; } = new List<MessageMention>();
     public virtual ICollection<PinnedMessage> PinnedMessages { get; set; } = new List<PinnedMessage>();
+
+    public virtual ICollection<UserReport> ReportsSubmitted { get; set; } = new List<UserReport>();
+    public virtual ICollection<UserReport> ReportsReceived { get; set; } = new List<UserReport>();
 
 }

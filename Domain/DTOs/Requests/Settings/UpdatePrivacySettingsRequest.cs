@@ -19,5 +19,9 @@ namespace linksy_backend_api.Domain.DTOs.Requests.Settings
         [RegularExpression("^(everyone|friends|nobody)$",
             ErrorMessage = "WhoCanAddToGroups must be 'everyone', 'friends', or 'nobody'")]
         public string? WhoCanAddToGroups { get; set; }
+
+        [RegularExpression("^(everyone|friends)$",
+            ErrorMessage = "WhoCanMessageMe must be 'everyone' or 'friends'")]
+        public string? WhoCanMessageMe { get; set; }
     }
 }

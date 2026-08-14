@@ -192,6 +192,14 @@ namespace linksy_backend_api.Hubs
                 await _messageService.SendMessageAsync(userId, request);
             }
             catch (HubException) { throw; }
+            catch (ArgumentException ex)
+            {
+                throw new HubException(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw HubErrors.ContactRestricted(ex.Message);
+            }
             catch (UnauthorizedAccessException ex)
             {
                 _logger.LogWarning(ex, "Unauthorized SendMessage");
@@ -491,6 +499,10 @@ namespace linksy_backend_api.Hubs
 
                 throw;
             }
+            catch (ArgumentException ex)
+            {
+                throw new HubException(ex.Message);
+            }
             catch (KeyNotFoundException)
             {
                 _logger.LogWarning(
@@ -510,17 +522,6 @@ namespace linksy_backend_api.Hubs
                 );
 
                 throw HubErrors.MessageEditForbidden();
-            }
-            catch (ArgumentException)
-            {
-                _logger.LogWarning(
-                    "Invalid message edit request. MessageId={MessageId}, UserId={UserId}, TextLength={TextLength}",
-                    messageId,
-                    userId,
-                    newText?.Length ?? 0
-                );
-
-                throw HubErrors.InvalidRequest();
             }
             catch (InvalidOperationException)
             {
@@ -726,6 +727,10 @@ namespace linksy_backend_api.Hubs
             {
                 throw HubErrors.NotInChatroom();
             }
+            catch (InvalidOperationException ex)
+            {
+                throw HubErrors.CallInitFailed(ex.Message);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error initiating call in chatroom {ChatroomId}", chatroomId);
@@ -777,6 +782,10 @@ namespace linksy_backend_api.Hubs
             catch (UnauthorizedAccessException)
             {
                 throw HubErrors.NotInChatroom();
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw HubErrors.CallInitFailed(ex.Message);
             }
             catch (Exception ex)
             {

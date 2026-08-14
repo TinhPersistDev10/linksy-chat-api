@@ -5,11 +5,14 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.Responses.Auth;
+using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Enums;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.Auth;
 using linksy_backend_api.DTOs.UserDTO;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Infrastructure.Cache;
+using linksy_backend_api.Infrastructure.Exceptions;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
@@ -23,18 +26,21 @@ namespace linksy_backend_api.Services
         private readonly IEmailService _emailService;
         private readonly IJwtService _jwtService;
         private readonly ICacheService _cache;
+        private readonly IUserModerationService _moderationService;
         private readonly ILogger<AuthService> _logger;
         public AuthService(
             IUnitOfWork unitOfWork,
             IEmailService emailService,
             IJwtService jwtService,
             ICacheService cache,
+            IUserModerationService moderationService,
             ILogger<AuthService> logger)
         {
             _unitOfWork = unitOfWork;
             _emailService = emailService;
             _jwtService = jwtService;
             _cache = cache;
+            _moderationService = moderationService;
             _logger = logger;
         }   
 
@@ -103,7 +109,8 @@ namespace linksy_backend_api.Services
                 IsEmailVerified = user.IsEmailVerified ?? false,
                 CreatedAt = user.CreatedAt ?? DateTime.UtcNow,
                 LastLoginAt = user.LastLoginAt,
-                Roles = roles
+                Roles = roles,
+                Moderation = _moderationService.ToStatusDto(user)
             };
         }
 
@@ -155,7 +162,29 @@ namespace linksy_backend_api.Services
                 throw exception;
             }
 
-            // Kiểm tra active
+            await _moderationService.RefreshExpiredModerationAsync(user, save: true);
+
+            var moderationLevel = _moderationService.GetEffectiveLevel(user);
+            if (ModerationLevels.BlocksLogin(moderationLevel))
+            {
+                if (moderationLevel == ModerationLevels.PermanentLock)
+                {
+                    throw new Exception(
+                        "Tài khoản đã bị khóa vĩnh viễn do vi phạm tiêu chuẩn cộng đồng." +
+                        (string.IsNullOrWhiteSpace(user.ModerationReason)
+                            ? ""
+                            : $" Lý do: {user.ModerationReason}"));
+                }
+
+                var until = user.ModerationExpiresAt?.ToString("dd/MM/yyyy HH:mm") ?? "không xác định";
+                throw new Exception(
+                    $"Tài khoản đang bị khóa tạm thời đến {until} UTC." +
+                    (string.IsNullOrWhiteSpace(user.ModerationReason)
+                        ? ""
+                        : $" Lý do: {user.ModerationReason}"));
+            }
+
+            // Kiểm tra active (deactivate thủ công / permanent lock)
             if (user.IsActive != true)
                 throw new Exception("Tài khoản đã bị vô hiệu hóa");
 
@@ -272,79 +301,95 @@ namespace linksy_backend_api.Services
             if (!string.IsNullOrWhiteSpace(request.Username))
                 ProfileValidationHelper.EnsureUsername(request.Username);
 
-            // Kiểm tra email đã tồn tại
-            var existingUser = await _unitOfWork.Users.FirstOrDefaultAsync(u =>
-                u.Email == request.Email || u.Username == request.Username);
+            var email = request.Email.Trim();
+            var username = request.Username.Trim();
 
-            if (existingUser != null)
+            var userByEmail = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
+            var userByUsername = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Username == username);
+
+            // Email đã có nhưng chưa verify → cho đăng ký lại / gửi OTP mới
+            if (userByEmail != null && userByEmail.IsEmailVerified != true)
             {
-
-                if (existingUser.Email == request.Email && existingUser.IsEmailVerified != true)
+                var usernameTakenByOther = userByUsername != null &&
+                    userByUsername.UserId != userByEmail.UserId;
+                if (usernameTakenByOther)
                 {
-                    // Kiểm tra username mới có trùng user KHÁC không
-                    var usernameTaken = await _unitOfWork.Users.AnyAsync(u =>
-                        u.Username == request.Username &&
-                        u.UserId != existingUser.UserId &&
-                        u.IsEmailVerified == true);
-
-                    if (usernameTaken)
-                        throw new Exception("Username đã được sử dụng");
-
-                    var oldOtps = await _unitOfWork.EmailOtps.Query()
-                                            .Where(o => o.Email == request.Email
-                                                && o.Purpose == "email_verification"
-                                                && o.IsUsed == false)
-                                            .ToListAsync();
-                    foreach (var oldOtp in oldOtps)
+                    throw new RegisterConflictException(new Dictionary<string, string>
                     {
-                        oldOtp.IsExpired = true;
-                    }
-                    existingUser.Username = request.Username;
-                    existingUser.PasswordHash = HashPassword(request.Password);
-                    existingUser.Fullname = request.Fullname;
-                    existingUser.DateOfBirth = request.DateOfBirth;
-                    existingUser.UpdatedAt = DateTime.UtcNow;
-
-                    var newOtp = GenerateOtp();
-                    var newEmailOtp = new EmailOtp
-                    {
-                        UserId = existingUser.UserId,
-                        Email = existingUser.Email,
-                        OtpCode = newOtp,
-                        Purpose = "email_verification",
-                        ExpiresAt = DateTime.UtcNow.AddMinutes(15),
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    await _unitOfWork.EmailOtps.AddAsync(newEmailOtp);
-                    await _unitOfWork.SaveChangesAsync();
-                    await _emailService.SendOtpEmailAsync(existingUser.Email, existingUser.Username, newOtp, "email_verification");
-                    return new RegisterResponse
-                    {
-                        UserId = existingUser.UserId,
-                        Email = existingUser.Email,
-                        Message = "Email đã tồn tại nhưng chưa được xác thực. Một OTP mới đã được gửi đến email của bạn.",
-                        Success = true
-                    };
+                        ["username"] = "Username đã tồn tại"
+                    });
                 }
-                // Email đã tồn tại VÀ đã verify → báo lỗi bình thường
-                if (existingUser.Email == request.Email && existingUser.IsEmailVerified == true)
-                    throw new Exception("Email đã được sử dụng");
-                if (existingUser.Username == request.Username && existingUser.IsEmailVerified == true)
-                    throw new Exception("Username đã được sử dụng");
+
+                var oldOtps = await _unitOfWork.EmailOtps.Query()
+                    .Where(o => o.Email == email
+                        && o.Purpose == "email_verification"
+                        && o.IsUsed == false)
+                    .ToListAsync();
+                foreach (var oldOtp in oldOtps)
+                {
+                    oldOtp.IsExpired = true;
+                }
+
+                userByEmail.Username = username;
+                userByEmail.PasswordHash = HashPassword(request.Password);
+                userByEmail.Fullname = request.Fullname;
+                userByEmail.DateOfBirth = request.DateOfBirth;
+                userByEmail.UpdatedAt = DateTime.UtcNow;
+
+                var newOtp = GenerateOtp();
+                var newEmailOtp = new EmailOtp
+                {
+                    UserId = userByEmail.UserId,
+                    Email = userByEmail.Email,
+                    OtpCode = newOtp,
+                    Purpose = "email_verification",
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(15),
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _unitOfWork.EmailOtps.AddAsync(newEmailOtp);
+                await _unitOfWork.SaveChangesAsync();
+                await _emailService.SendOtpEmailAsync(
+                    userByEmail.Email, userByEmail.Username, newOtp, "email_verification");
+
+                return new RegisterResponse
+                {
+                    UserId = userByEmail.UserId,
+                    Email = userByEmail.Email,
+                    Message = "Email đã tồn tại nhưng chưa được xác thực. Một OTP mới đã được gửi đến email của bạn.",
+                    Success = true
+                };
             }
+
+            var fieldErrors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (userByEmail != null && userByEmail.IsEmailVerified == true)
+                fieldErrors["email"] = "Email đã tồn tại";
+
+            if (userByUsername != null)
+            {
+                // Username đã dùng bởi user đã verify, hoặc bởi user khác
+                if (userByUsername.IsEmailVerified == true ||
+                    userByEmail == null ||
+                    userByUsername.UserId != userByEmail.UserId)
+                {
+                    fieldErrors["username"] = "Username đã tồn tại";
+                }
+            }
+
+            if (fieldErrors.Count > 0)
+                throw new RegisterConflictException(fieldErrors);
 
             // Tạo user mới
             var newUserId = Guid.NewGuid();
             var user = new User
             {
                 UserId = newUserId,
-                Username = request.Username,
-                Email = request.Email,
+                Username = username,
+                Email = email,
                 PasswordHash = HashPassword(request.Password),
                 Fullname = request.Fullname,
                 DateOfBirth = request.DateOfBirth,
                 // ⭐ Set avatar mặc định ngay khi tạo user
-                Avatar = DefaultAvatarHelper.GetDefaultUserAvatar(newUserId, username: request.Username, fullname: request.Fullname),
+                Avatar = DefaultAvatarHelper.GetDefaultUserAvatar(newUserId, username: username, fullname: request.Fullname),
                 IsActive = true,
                 IsEmailVerified = false,
                 CreatedAt = DateTime.UtcNow,

@@ -16,12 +16,24 @@ namespace linksy_backend_api.Repositories
             _context = context;
         }
 
-        public async Task<List<Message>> GetChatroomMessagesAsync(Guid chatroomId, int page, int pageSize)
+        private static IQueryable<Message> Visible(IQueryable<Message> query, Guid chatroomId, DateTime? after)
         {
-            return await Query()
+            query = query.Where(m =>
+                m.ChatroomId == chatroomId &&
+                (m.IsDeleted == null || m.IsDeleted == false));
+
+            if (after.HasValue)
+                query = query.Where(m => m.SentAt > after.Value);
+
+            return query;
+        }
+
+        public async Task<List<Message>> GetChatroomMessagesAsync(
+            Guid chatroomId, int page, int pageSize, DateTime? after = null)
+        {
+            return await Visible(Query(), chatroomId, after)
                 .Include(m => m.Sender)
                 .Include(m => m.MessageAttachments)
-                .Where(m => m.ChatroomId == chatroomId && (m.IsDeleted == null || m.IsDeleted == false))
                 .OrderByDescending(m => m.SentAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -32,27 +44,24 @@ namespace linksy_backend_api.Repositories
             Guid chatroomId,
             Guid messageId,
             int beforeCount,
-            int afterCount)
+            int afterCount,
+            DateTime? after = null)
         {
-            var target = await Query()
+            var targetQuery = Visible(Query(), chatroomId, after)
                 .Include(m => m.Sender)
-                .Include(m => m.MessageAttachments)
-                .FirstOrDefaultAsync(m =>
-                    m.MessageId == messageId &&
-                    m.ChatroomId == chatroomId &&
-                    (m.IsDeleted == null || m.IsDeleted == false));
+                .Include(m => m.MessageAttachments);
+
+            var target = await targetQuery.FirstOrDefaultAsync(m => m.MessageId == messageId);
 
             if (target is null)
                 return (new List<Message>(), false);
 
-            var older = await Query()
+            var older = await Visible(Query(), chatroomId, after)
                 .Include(m => m.Sender)
                 .Include(m => m.MessageAttachments)
                 .Where(m =>
-                    m.ChatroomId == chatroomId &&
-                    (m.IsDeleted == null || m.IsDeleted == false) &&
-                    (m.SentAt < target.SentAt ||
-                     (m.SentAt == target.SentAt && m.MessageId.CompareTo(target.MessageId) < 0)))
+                    m.SentAt < target.SentAt ||
+                    (m.SentAt == target.SentAt && m.MessageId.CompareTo(target.MessageId) < 0))
                 .OrderByDescending(m => m.SentAt)
                 .ThenByDescending(m => m.MessageId)
                 .Take(beforeCount + 1)
@@ -62,14 +71,12 @@ namespace linksy_backend_api.Repositories
             if (hasMoreBefore)
                 older = older.Take(beforeCount).ToList();
 
-            var newer = await Query()
+            var newer = await Visible(Query(), chatroomId, after)
                 .Include(m => m.Sender)
                 .Include(m => m.MessageAttachments)
                 .Where(m =>
-                    m.ChatroomId == chatroomId &&
-                    (m.IsDeleted == null || m.IsDeleted == false) &&
-                    (m.SentAt > target.SentAt ||
-                     (m.SentAt == target.SentAt && m.MessageId.CompareTo(target.MessageId) > 0)))
+                    m.SentAt > target.SentAt ||
+                    (m.SentAt == target.SentAt && m.MessageId.CompareTo(target.MessageId) > 0))
                 .OrderBy(m => m.SentAt)
                 .ThenBy(m => m.MessageId)
                 .Take(afterCount)
@@ -86,7 +93,8 @@ namespace linksy_backend_api.Repositories
         public async Task<(List<Message> Messages, bool HasMore)> GetMessagesBeforeAsync(
             Guid chatroomId,
             Guid beforeMessageId,
-            int pageSize)
+            int pageSize,
+            DateTime? after = null)
         {
             var anchor = await Query()
                 .AsNoTracking()
@@ -97,14 +105,13 @@ namespace linksy_backend_api.Repositories
             if (anchor is null)
                 return (new List<Message>(), false);
 
-            var batch = await Query()
+            // Anchor itself may be before clearedAt — still page older messages within the visible window.
+            var batch = await Visible(Query(), chatroomId, after)
                 .Include(m => m.Sender)
                 .Include(m => m.MessageAttachments)
                 .Where(m =>
-                    m.ChatroomId == chatroomId &&
-                    (m.IsDeleted == null || m.IsDeleted == false) &&
-                    (m.SentAt < anchor.SentAt ||
-                     (m.SentAt == anchor.SentAt && m.MessageId.CompareTo(anchor.MessageId) < 0)))
+                    m.SentAt < anchor.SentAt ||
+                    (m.SentAt == anchor.SentAt && m.MessageId.CompareTo(anchor.MessageId) < 0))
                 .OrderByDescending(m => m.SentAt)
                 .ThenByDescending(m => m.MessageId)
                 .Take(pageSize + 1)
@@ -122,6 +129,15 @@ namespace linksy_backend_api.Repositories
         {
             return await Query()
                 .Where(m => m.ChatroomId == chatroomId)
+                .OrderByDescending(m => m.SentAt)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<Message?> GetLastMessageAfterAsync(Guid chatroomId, DateTime after)
+        {
+            return await Visible(Query(), chatroomId, after)
+                .Include(m => m.Sender)
+                .Include(m => m.MessageAttachments)
                 .OrderByDescending(m => m.SentAt)
                 .FirstOrDefaultAsync();
         }
@@ -155,18 +171,17 @@ namespace linksy_backend_api.Repositories
                 .FirstOrDefaultAsync(m => m.MessageId == messageId);
         }
 
-        public async Task<List<Message>> SearchMessageAsync(Guid chatroomId, string keyword, int limit = 50)
+        public async Task<List<Message>> SearchMessageAsync(
+            Guid chatroomId, string keyword, int limit = 50, DateTime? after = null)
         {
             if (string.IsNullOrWhiteSpace(keyword)) return new List<Message>();
             var normalized = keyword.Trim().ToLower();
 
-            return await Query()
+            return await Visible(Query(), chatroomId, after)
                         .Include(m => m.Sender)
                         .Include(m => m.MessageAttachments)
                         .Where(m =>
-                        m.ChatroomId == chatroomId
-                        && (m.IsDeleted == false || m.IsDeleted == null)
-                        && m.MessageText != null
+                        m.MessageText != null
                         && m.MessageText.ToLower().Contains(normalized))
                         .OrderByDescending(m => m.SentAt)
                         .Take(limit)

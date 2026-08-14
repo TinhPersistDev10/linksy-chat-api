@@ -19,17 +19,20 @@ namespace linksy_backend_api.Infrastructure.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileService _fileService;
         private readonly ICacheService _cache;
+        private readonly INotificationService _notificationService;
         private readonly ILogger<UserService> _logger;
 
         public UserService(
            IUnitOfWork unitOfWork,
             IFileService fileService,
             ICacheService cache,
+            INotificationService notificationService,
             ILogger<UserService> logger)
         {
             _unitOfWork = unitOfWork;
             _fileService = fileService;
             _cache = cache;
+            _notificationService = notificationService;
             _logger = logger;
         }
         //GET USER CURRENT 
@@ -162,6 +165,19 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 await _unitOfWork.SaveChangesAsync();
                 await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
+
+                try
+                {
+                    await _notificationService.NotifyFriendAvatarChangedAsync(userId, avatarUrl);
+                }
+                catch (Exception notifyEx)
+                {
+                    _logger.LogWarning(
+                        notifyEx,
+                        "Avatar updated but friend notifications failed. UserId={UserId}",
+                        userId);
+                }
+
                 return new AvatarResponse
                 {
                     Success = true,
@@ -201,6 +217,19 @@ namespace linksy_backend_api.Infrastructure.Services
                 user.Avatar = DefaultAvatarHelper.GetDefaultUserAvatar(userId, username: user.Username, fullname: user.Fullname);
                 user.UpdatedAt = DateTime.UtcNow;
                 await _unitOfWork.SaveChangesAsync();
+                await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
+
+                try
+                {
+                    await _notificationService.NotifyFriendAvatarChangedAsync(userId, user.Avatar);
+                }
+                catch (Exception notifyEx)
+                {
+                    _logger.LogWarning(
+                        notifyEx,
+                        "Avatar reset but friend notifications failed. UserId={UserId}",
+                        userId);
+                }
 
                 return new AvatarResponse
                 {

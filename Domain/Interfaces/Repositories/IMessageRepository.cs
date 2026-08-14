@@ -8,20 +8,23 @@ namespace linksy_backend_api.Repositories.IRepositories
 {
     public interface IMessageRepository : IRepository<Message>
     {
-        Task<List<Message>> GetChatroomMessagesAsync(Guid chatroomId, int page, int pageSize);
+        Task<List<Message>> GetChatroomMessagesAsync(Guid chatroomId, int page, int pageSize, DateTime? after = null);
         Task<(List<Message> Messages, bool HasMoreBefore)> GetMessagesAroundAsync(
             Guid chatroomId,
             Guid messageId,
             int beforeCount,
-            int afterCount);
+            int afterCount,
+            DateTime? after = null);
         Task<(List<Message> Messages, bool HasMore)> GetMessagesBeforeAsync(
             Guid chatroomId,
             Guid beforeMessageId,
-            int pageSize);
+            int pageSize,
+            DateTime? after = null);
         Task<Message?> GetWithSenderAsync(Guid messageId);
         Task<List<Message>> GetRepliesAsync(Guid parentMessageId);
         Task<int> GetUnreadCountAsync(Guid chatroomId, Guid userId, DateTime lastReadAt);
         Task<Message?> GetLastMessageAsync(Guid chatroomId);
-        Task<List<Message>> SearchMessageAsync (Guid chatroomId, string keyword, int limit = 50);
+        Task<Message?> GetLastMessageAfterAsync(Guid chatroomId, DateTime after);
+        Task<List<Message>> SearchMessageAsync(Guid chatroomId, string keyword, int limit = 50, DateTime? after = null);
     }
 }

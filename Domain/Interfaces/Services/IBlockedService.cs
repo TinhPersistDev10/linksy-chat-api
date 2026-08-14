@@ -15,6 +15,6 @@ namespace linksy_backend_api.Core.Interfaces.Services
 
         Task<ApiResponseDto> UnblockUserAsync(Guid blockerId, Guid blockedUserId);
 
-        
+        Task<(bool IBlocked, bool BlockedBy)> GetBlockStatusAsync(Guid userId, Guid otherUserId);
     }
 }

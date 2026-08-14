@@ -5,10 +5,12 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using linksy_backend_api.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.API.Controllers
 {
     [ApiController]
+    [EnableRateLimiting("api")]
     public abstract class BaseApiController : ControllerBase
     {
         /// <summary>

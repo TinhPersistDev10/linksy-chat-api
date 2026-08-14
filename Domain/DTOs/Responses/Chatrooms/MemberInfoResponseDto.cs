@@ -14,6 +14,9 @@ namespace linksy_backend_api.Domain.DTOs.Responses.Chatrooms
         public bool IsMuted { get; set; }
         public DateTime? MutedUntil { get; set; }
         public string NotificationPreference { get; set; } = "all";
+        public bool IsPinned { get; set; }
+        public DateTime? PinnedAt { get; set; }
+        public DateTime? ClearedAt { get; set; }
         public int MessageCount { get; set; }
         public DateTime? LastReadAt { get; set; }
         public DateTime JoinedAt { get; set; }

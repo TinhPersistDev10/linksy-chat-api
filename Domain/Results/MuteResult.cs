@@ -1,9 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-
-namespace linksy_backend_api.Infrastructure.Services.Results
+namespace linksy_backend_api.Domain.Results
 {
     public class MuteResult
     {

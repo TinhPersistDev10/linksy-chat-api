@@ -2,12 +2,14 @@ using linksy_backend_api.Core.Interfaces.Services;
 using linksy_backend_api.DTOs.ChatroomDTO;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace linksy_backend_api.Controllers
 {
     [Authorize]
+    [EnableRateLimiting("api")]
     [ApiController]
     [Route("api/v1/invitations")]
     public class GroupInvitationsController : ControllerBase

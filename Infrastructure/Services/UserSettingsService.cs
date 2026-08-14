@@ -64,7 +64,8 @@ namespace linksy_backend_api.Infrastructure.Services
                     LastSeenEnabled = privacySettings.LastSeenEnabled,
                     ProfilePhotoVisibility = privacySettings.ProfilePhotoVisibility,
                     StatusVisibility = privacySettings.StatusVisibility,
-                    WhoCanAddToGroups = privacySettings.WhoCanAddToGroups
+                    WhoCanAddToGroups = privacySettings.WhoCanAddToGroups,
+                    WhoCanMessageMe = privacySettings.WhoCanMessageMe
                 },
                 UserStatus = new UserStatusResponse
                 {
@@ -187,6 +188,8 @@ namespace linksy_backend_api.Infrastructure.Services
                     settings.StatusVisibility = request.StatusVisibility;
                 if (request.WhoCanAddToGroups is not null)
                     settings.WhoCanAddToGroups = request.WhoCanAddToGroups;
+                if (request.WhoCanMessageMe is not null)
+                    settings.WhoCanMessageMe = request.WhoCanMessageMe;
 
                 _unitOfWork.PrivacySettingsRepo.Update(settings);
                 await _unitOfWork.SaveChangesAsync();
@@ -203,7 +206,8 @@ namespace linksy_backend_api.Infrastructure.Services
                         LastSeenEnabled = settings.LastSeenEnabled,
                         ProfilePhotoVisibility = settings.ProfilePhotoVisibility,
                         StatusVisibility = settings.StatusVisibility,
-                        WhoCanAddToGroups = settings.WhoCanAddToGroups
+                        WhoCanAddToGroups = settings.WhoCanAddToGroups,
+                        WhoCanMessageMe = settings.WhoCanMessageMe
                     }
                 };
             }

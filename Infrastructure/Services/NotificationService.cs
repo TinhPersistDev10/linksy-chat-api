@@ -12,6 +12,7 @@ using linksy_backend_api.Repositories.IRepositories;
 using linksy_backend_api.Services;
 using linksy_backend_api.Services.IServices;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -480,6 +481,54 @@ namespace linksy_backend_api.Infrastructure.Services
             {
                 _logger.LogError(ex, "Error notifying group invitation");
                 throw;
+            }
+        }
+
+        public async Task NotifyFriendAvatarChangedAsync(Guid userId, string newAvatarUrl)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found when notifying avatar change {UserId}", userId);
+                    return;
+                }
+
+                var friendIds = await _unitOfWork.FriendshipRepository.GetFriendIdsAsync(userId);
+                if (friendIds.Count == 0) return;
+
+                // Exclude friends with a block in either direction
+                var blockedPairs = await _unitOfWork.BlockedUsers.Query()
+                    .Where(b =>
+                        (b.BlockerUserId == userId && friendIds.Contains(b.BlockedUserId)) ||
+                        (b.BlockedUserId == userId && friendIds.Contains(b.BlockerUserId)))
+                    .Select(b => b.BlockerUserId == userId ? b.BlockedUserId : b.BlockerUserId)
+                    .ToListAsync();
+
+                var blockedSet = blockedPairs.ToHashSet();
+                var recipients = friendIds.Where(id => !blockedSet.Contains(id)).ToList();
+                if (recipients.Count == 0) return;
+
+                var displayName = user.Fullname ?? user.Username;
+                var requests = recipients.Select(friendId => new CreateNotificationRequest
+                {
+                    UserId = friendId,
+                    NotificationType = "friend_avatar_changed",
+                    Title = "Bạn bè đổi ảnh đại diện",
+                    Body = $"{displayName} vừa mới đổi ảnh đại diện",
+                    RelatedEntityId = userId,
+                    RelatedEntityType = "user",
+                    ActionUrl = $"/dashboard",
+                    ImageUrl = newAvatarUrl
+                }).ToList();
+
+                await CreateBulkNotificationsAsync(requests);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error notifying friends about avatar change for user {UserId}", userId);
+                // Do not rethrow — avatar update already succeeded
             }
         }
 

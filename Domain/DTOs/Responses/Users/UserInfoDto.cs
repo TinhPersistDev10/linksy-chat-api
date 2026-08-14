@@ -20,5 +20,6 @@ namespace linksy_backend_api.DTOs.UserDTO
         public DateTime CreatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }
         public List<string> Roles { get; set; } = new();
+        public linksy_backend_api.DTOs.Moderation.UserModerationStatusDto? Moderation { get; set; }
     }
 }

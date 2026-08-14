@@ -7,12 +7,14 @@ using linksy_backend_api.Infrastructure.Mappers;
 using linksy_backend_api.Repositories.IRepositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 
 namespace linksy_backend_api.Controllers
 {
     [ApiController]
     [Authorize]
+    [EnableRateLimiting("api")]
     [Route("api/v1/messages")]
     [Produces("application/json")]
     public class MessageController : ControllerBase
@@ -257,6 +259,10 @@ namespace linksy_backend_api.Controllers
             {
                 return Forbid();
             }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
+            }
             catch (ArgumentException ex)
             {
                 return BadRequest(new ApiResponseDto { Success = false, Message = ex.Message });
@@ -426,6 +432,7 @@ namespace linksy_backend_api.Controllers
 
         [HttpPost("attachments/upload")]
         [Consumes("multipart/form-data")]
+        [EnableRateLimiting("upload")]
         public async Task<IActionResult> UploadAttachment(
     [FromForm] UploadAttachmentRequest request)
         {

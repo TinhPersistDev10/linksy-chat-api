@@ -24,13 +24,30 @@ namespace linksy_backend_api.Repositories
                 .Include(c => c.LastMessage).ThenInclude(m => m!.Sender)
                 .Where(c => c.ChatroomMembers.Any(rm => rm.UserId == userId && rm.LeftAt == null));
 
+            // Hide conversations the user soft-deleted until newer activity arrives.
+            query = query.Where(c => !c.ChatroomMembers.Any(rm =>
+                rm.UserId == userId &&
+                rm.LeftAt == null &&
+                rm.ClearedAt != null &&
+                (c.LastActivityAt == null || c.LastActivityAt <= rm.ClearedAt)));
+
             if (!includeArchived)
                 query = query.Where(c => !(c.IsArchived ?? false));
 
             if (!string.IsNullOrEmpty(roomType))
                 query = query.Where(c => c.RoomType == roomType);
 
-            return await query.OrderByDescending(c => c.LastActivityAt).ToListAsync();
+            return await query
+                .OrderByDescending(c => c.ChatroomMembers
+                    .Where(rm => rm.UserId == userId && rm.LeftAt == null)
+                    .Select(rm => rm.IsPinned)
+                    .FirstOrDefault())
+                .ThenByDescending(c => c.ChatroomMembers
+                    .Where(rm => rm.UserId == userId && rm.LeftAt == null)
+                    .Select(rm => rm.PinnedAt)
+                    .FirstOrDefault())
+                .ThenByDescending(c => c.LastActivityAt)
+                .ToListAsync();
         }
         public async Task<Chatroom?> GetDirectChatroomAsync(Guid user1Id, Guid user2Id)
         {

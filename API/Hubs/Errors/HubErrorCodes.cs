@@ -25,6 +25,7 @@ public static class HubErrorCodes
     public const string MessageReactionForbidden = "MESSAGE_REACTION_FORBIDDEN";
     public const string MessageReactionFailed = "MESSAGE_REACTION_FAILED";
     public const string MessageAlreadyReacted = "MESSAGE_ALREADY_REACTED";
+    public const string ContactRestricted = "CONTACT_RESTRICTED";
 
     //Call
     // Thêm vào cuối HubErrorCodes.cs

@@ -9,5 +9,6 @@
         public string ProfilePhotoVisibility { get; set; } = "everyone";
         public string StatusVisibility { get; set; } = "everyone";
         public string WhoCanAddToGroups { get; set; } = "everyone";
+        public string WhoCanMessageMe { get; set; } = "everyone";
     }
 }

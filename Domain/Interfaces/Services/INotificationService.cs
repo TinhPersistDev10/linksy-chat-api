@@ -32,5 +32,6 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task NotifyNewFriendRequestAsync(Guid senderId, Guid receiverId, Guid requestId);
         Task NotifyFriendRequestAcceptedAsync(Guid accepterId, Guid senderId, Guid friendshipId);
         Task NotifyGroupInvitationAsync(Guid invitedBy, Guid invitedUserId, Guid chatroomId, Guid invitationId);
+        Task NotifyFriendAvatarChangedAsync(Guid userId, string newAvatarUrl);
     }
 }

@@ -43,6 +43,7 @@ namespace linksy_backend_api.Repositories.IRepositories
         IRepository<Friendship> Friendships { get; }
         IRepository<FriendRequest> FriendRequests { get; }
         IRepository<BlockedUser> BlockedUsers { get; }
+        IRepository<UserReport> UserReports { get; }
         #endregion
 
         #region Notification repositories

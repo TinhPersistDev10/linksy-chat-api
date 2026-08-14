@@ -2,10 +2,6 @@ using System.Text.RegularExpressions;
 
 namespace linksy_backend_api.Infrastructure.Helpers
 {
-    /// <summary>
-    /// Shared profile field rules used by register/update flows.
-    /// Keep in sync with frontend validators (username/fullname/bio/dob).
-    /// </summary>
     public static class ProfileValidationHelper
     {
         public static readonly Regex UsernamePattern = new(
