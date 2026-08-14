@@ -273,6 +273,8 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IChatroomService, ChatroomService>();
 builder.Services.AddScoped<IFriendService, FriendService>();
 builder.Services.AddScoped<IMessageService, MessageService>();
+builder.Services.AddScoped<IScheduledMessageService, ScheduledMessageService>();
+builder.Services.AddHostedService<linksy_backend_api.Infrastructure.Background.ScheduledMessageDispatcher>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IBlockedService, BlockedService>();
 builder.Services.AddScoped<IUserReportService, UserReportService>();

@@ -49,6 +49,7 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<CallParticipant> CallParticipants { get; set; }
     public virtual DbSet<UserReport> UserReports { get; set; }
     public virtual DbSet<FriendInvite> FriendInvites { get; set; }
+    public virtual DbSet<ScheduledMessage> ScheduledMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -98,6 +99,7 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new CallParticipantConfiguration());
         modelBuilder.ApplyConfiguration(new UserReportConfiguration());
         modelBuilder.ApplyConfiguration(new FriendInviteConfiguration());
+        modelBuilder.ApplyConfiguration(new ScheduledMessageConfiguration());
         OnModelCreatingPartial(modelBuilder);
     }
 
