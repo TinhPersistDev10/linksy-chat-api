@@ -18,7 +18,6 @@ namespace linksy_backend_api.Repositories.IRepositories
         #region Chatroom repositories
         IRepository<Chatroom> Chatrooms { get; }
         IRepository<ChatroomMember> ChatroomMembers { get; }
-        IRepository<GroupInvitation> GroupInvitations { get; }
         IRepository<MemberPermission> MemberPermissions { get; }
         #endregion
 
@@ -33,6 +32,7 @@ namespace linksy_backend_api.Repositories.IRepositories
         IRepository<MessagePollOption> MessagePollOptions { get; }
         IRepository<MessagePollVote> MessagePollVotes { get; }
         IRepository<ScheduledMessage> ScheduledMessages { get; }
+        IRepository<Sticker> Stickers { get; }
         #endregion
 
         #region Call repositories
@@ -62,7 +62,6 @@ namespace linksy_backend_api.Repositories.IRepositories
         #region Specialized repositories
         IChatroomRepository ChatroomRepository { get; }
         IChatroomMemberRepository ChatroomMemberRepository { get; }
-        IGroupInvitationRepository GroupInvitationRepository { get; }
         IUserRepository UserRepository { get; }
         IMessageRepository MessageRepository { get; }
         IMemberPermissionRepository MemberPermissionRepository { get; }

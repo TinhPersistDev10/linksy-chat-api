@@ -34,8 +34,6 @@ public partial class Chatroom
 
     public virtual User CreatedByNavigation { get; set; } = null!;
 
-    public virtual ICollection<GroupInvitation> GroupInvitations { get; set; } = new List<GroupInvitation>();
-
     public virtual Message? LastMessage { get; set; }
 
     public virtual ICollection<Message> Messages { get; set; } = new List<Message>();

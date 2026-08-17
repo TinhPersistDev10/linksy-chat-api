@@ -16,5 +16,6 @@ namespace linksy_backend_api.Core.Interfaces.Services
         Task<UploadAttachmentResponse> UploadMessageVideoAsync(IFormFile file, Guid chatroomId);
         Task<UploadAttachmentResponse> UploadMessageAudioAsync(IFormFile file, Guid chatroomId);
         Task<UploadAttachmentResponse> UploadMessageRawFileAsync(IFormFile file, Guid chatroomId);
+        Task<UploadAttachmentResponse> UploadStickerAsync(IFormFile file, Guid userId);
     }
 }

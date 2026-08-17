@@ -97,12 +97,22 @@ builder.Services.AddDbContext<LinksyDbContext>(options =>
     }
 });
 
-//  JWT 
+// ── Startup logger (also reused by the Redis setup below) ──────────────────────
+using var loggerFactory = LoggerFactory.Create(logging =>
+{
+    logging.AddConsole();
+    logging.AddDebug();
+});
+var startupLogger = loggerFactory.CreateLogger("Startup");
+
+//  JWT
 var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
 
-Console.WriteLine($"JWT Config — Key Length: {jwtKey?.Length}, Issuer: {jwtIssuer}, Audience: {jwtAudience}");
+startupLogger.LogInformation(
+    "JWT Config — Key Length: {KeyLength}, Issuer: {Issuer}, Audience: {Audience}",
+    jwtKey?.Length, jwtIssuer, jwtAudience);
 
 if (string.IsNullOrEmpty(jwtKey))
     throw new ArgumentNullException(nameof(jwtKey), "JWT Key is not configured");
@@ -178,6 +188,10 @@ builder.Services.AddAuthentication(options =>
 
         OnTokenValidated = async context =>
         {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Jwt");
+
             var tokenClaims = context.SecurityToken switch
             {
                 JwtSecurityToken jwtToken => jwtToken.Claims,
@@ -191,7 +205,7 @@ builder.Services.AddAuthentication(options =>
                 ?? context.Principal?.FindFirstValue(ClaimTypes.SerialNumber);
             if (string.IsNullOrWhiteSpace(jti))
             {
-                Console.WriteLine("[JWT] Token rejected: missing jti claim.");
+                logger.LogWarning("Token rejected: missing jti claim. TraceId={TraceId}", context.HttpContext.TraceIdentifier);
                 context.Fail("JWT is missing jti claim.");
                 return;
             }
@@ -204,8 +218,10 @@ builder.Services.AddAuthentication(options =>
             };
             if (string.IsNullOrWhiteSpace(rawToken))
             {
-                Console.WriteLine(
-                    $"[JWT] Token rejected: raw token unavailable. SecurityTokenType={context.SecurityToken?.GetType().FullName ?? "null"}");
+                logger.LogWarning(
+                    "Token rejected: raw token unavailable. SecurityTokenType={SecurityTokenType}, TraceId={TraceId}",
+                    context.SecurityToken?.GetType().FullName ?? "null",
+                    context.HttpContext.TraceIdentifier);
                 context.Fail("JWT token payload is unavailable.");
                 return;
             }
@@ -216,17 +232,20 @@ builder.Services.AddAuthentication(options =>
 
             if (activeToken is null)
             {
-                Console.WriteLine("[JWT] Token rejected: token is revoked or not active.");
+                logger.LogWarning("Token rejected: token is revoked or not active. TraceId={TraceId}", context.HttpContext.TraceIdentifier);
                 context.Fail("JWT token has been revoked or is no longer active.");
                 return;
             }
 
-            Console.WriteLine("[JWT] Token validated successfully.");
+            logger.LogDebug("Token validated successfully. TraceId={TraceId}", context.HttpContext.TraceIdentifier);
         },
 
         OnChallenge = context =>
         {
-            Console.WriteLine($"[JWT] OnChallenge: {context.Error} — {context.ErrorDescription}");
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Jwt");
+            logger.LogWarning("OnChallenge: {Error} — {ErrorDescription}", context.Error, context.ErrorDescription);
             return Task.CompletedTask;
         }
     };
@@ -281,12 +300,12 @@ builder.Services.AddScoped<IUserReportService, UserReportService>();
 builder.Services.AddScoped<IUserModerationService, UserModerationService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
-builder.Services.AddScoped<IGroupInvitationService, GroupInvitationService>();
 builder.Services.AddScoped<IChatroomAccessService, ChatroomAccessService>();
 builder.Services.AddScoped<IDirectContactPrivacyService, DirectContactPrivacyService>();
 builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 builder.Services.AddScoped<IReactionService, ReactionService>();
 builder.Services.AddScoped<IPollService, PollService>();
+builder.Services.AddScoped<IStickerService, StickerService>();
 builder.Services.AddSingleton<IContentModerationService, ContentModerationService>();
 builder.Services.Configure<linksy_backend_api.Domain.Options.ContentModerationOptions>(
     builder.Configuration.GetSection(
@@ -302,12 +321,6 @@ builder.Services.AddMemoryCache();
 
 var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled", true);
 var redisConn = builder.Configuration.GetValue<string>("Redis:ConnectionString");
-using var loggerFactory = LoggerFactory.Create(logging =>
-{
-    logging.AddConsole();
-    logging.AddDebug();
-});
-var startupLogger = loggerFactory.CreateLogger("Startup");
 
 if (redisEnabled && !string.IsNullOrEmpty(redisConn))
 {

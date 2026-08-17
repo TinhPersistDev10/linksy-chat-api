@@ -458,33 +458,6 @@ namespace linksy_backend_api.Infrastructure.Services
             }
         }
 
-        public async Task NotifyGroupInvitationAsync(Guid invitedBy, Guid invitedUserId, Guid chatroomId, Guid invitationId)
-        {
-            try
-            {
-                var inviter = await _unitOfWork.Users.GetByIdAsync(invitedBy);
-                var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId);
-                if (inviter == null || chatroom == null) return;
-
-                await CreateNotificationAsync(new CreateNotificationRequest
-                {
-                    UserId = invitedUserId,
-                    NotificationType = "group_invitation",
-                    Title = "Lời mời vào nhóm",
-                    Body = $"{inviter.Fullname ?? inviter.Username} đã mời bạn vào nhóm {chatroom.RoomName}",
-                    RelatedEntityId = invitationId,
-                    RelatedEntityType = "group_invitation",
-                    ActionUrl = $"/invitations/{invitationId}",
-                    ImageUrl = chatroom.Avatar
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error notifying group invitation");
-                throw;
-            }
-        }
-
         public async Task NotifyFriendAvatarChangedAsync(Guid userId, string newAvatarUrl)
         {
             try
