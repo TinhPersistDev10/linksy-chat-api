@@ -20,5 +20,8 @@ namespace linksy_backend_api.Services.IServices
         Task<ApiResponseDto> CancelFriendRequestAsync(Guid userId, Guid requestId);
         Task<ApiResponseDto> UnfriendAsync(Guid userId, Guid friendId);
         Task<RelationshipDto> GetRelationshipAsync(Guid userId, Guid otherUserId);
+        Task<FriendInviteLinkResponse> CreateInviteLinkAsync(Guid inviterId);
+        Task<FriendInvitePreviewResponse> GetInvitePreviewAsync(string token);
+        Task<AcceptFriendInviteResponse> AcceptInviteAsync(Guid currentUserId, string token);
     }
 }

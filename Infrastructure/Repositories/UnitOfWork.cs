@@ -34,7 +34,6 @@ namespace linksy_backend_api.Repositories
             Chatrooms = new Repository<Chatroom>(_context);
             ChatroomMembers = new Repository<ChatroomMember>(_context);
             MemberPermissions = new Repository<MemberPermission>(_context);
-            GroupInvitations = new Repository<GroupInvitation>(_context);
 
             Messages = new Repository<Message>(_context);
             MessageAttachments = new Repository<MessageAttachment>(_context);
@@ -45,6 +44,8 @@ namespace linksy_backend_api.Repositories
             MessagePolls = new Repository<MessagePoll>(_context);
             MessagePollOptions = new Repository<MessagePollOption>(_context);
             MessagePollVotes = new Repository<MessagePollVote>(_context);
+            ScheduledMessages = new Repository<ScheduledMessage>(_context);
+            Stickers = new Repository<Sticker>(_context);
 
             CallLogs = new Repository<CallLog>(_context);
             CallParticipants = new Repository<CallParticipant>(_context);
@@ -53,6 +54,7 @@ namespace linksy_backend_api.Repositories
             FriendRequests = new Repository<FriendRequest>(_context);
             BlockedUsers = new Repository<BlockedUser>(_context);
             UserReports = new Repository<UserReport>(_context);
+            FriendInvites = new Repository<FriendInvite>(_context);
 
             Notifications = new Repository<Notification>(_context);
 
@@ -63,7 +65,6 @@ namespace linksy_backend_api.Repositories
 
             ChatroomRepository = new ChatroomRepository(_context);
             ChatroomMemberRepository = new ChatroomMemberRepository(_context);
-            GroupInvitationRepository = new GroupInvitationRepository(_context);
             UserRepository = new UserRepository(_context);
             MessageRepository = new MessageRepository(_context);
             MemberPermissionRepository = new MemberPermissionRepository(_context);
@@ -90,7 +91,6 @@ namespace linksy_backend_api.Repositories
         public IRepository<Chatroom> Chatrooms { get; private set; } = null!;
         public IRepository<ChatroomMember> ChatroomMembers { get; private set; } = null!;
         public IRepository<MemberPermission> MemberPermissions { get; private set; } = null!;
-        public IRepository<GroupInvitation> GroupInvitations { get; private set; } = null!;
         public IRepository<Message> Messages { get; private set; } = null!;
         public IRepository<MessageAttachment> MessageAttachments { get; private set; } = null!;
         public IRepository<MessageReaction> MessageReactions { get; private set; } = null!;
@@ -100,12 +100,15 @@ namespace linksy_backend_api.Repositories
         public IRepository<MessagePoll> MessagePolls { get; private set; } = null!;
         public IRepository<MessagePollOption> MessagePollOptions { get; private set; } = null!;
         public IRepository<MessagePollVote> MessagePollVotes { get; private set; } = null!;
+        public IRepository<ScheduledMessage> ScheduledMessages { get; private set; } = null!;
+        public IRepository<Sticker> Stickers { get; private set; } = null!;
         public IRepository<CallLog> CallLogs { get; private set; } = null!;
         public IRepository<CallParticipant> CallParticipants { get; private set; } = null!;
         public IRepository<Friendship> Friendships { get; private set; } = null!;
         public IRepository<FriendRequest> FriendRequests { get; private set; } = null!;
         public IRepository<BlockedUser> BlockedUsers { get; private set; } = null!;
         public IRepository<UserReport> UserReports { get; private set; } = null!;
+        public IRepository<FriendInvite> FriendInvites { get; private set; } = null!;
         public IRepository<Notification> Notifications { get; private set; } = null!;
         public IRepository<UserSettings> UserSettingsRepo { get; private set; } = null!;
         public IRepository<NotificationSettings> NotificationSettingsRepo { get; private set; } = null!;
@@ -116,7 +119,6 @@ namespace linksy_backend_api.Repositories
         #region Specialized Repositories
         public IChatroomRepository ChatroomRepository { get; private set; } = null!;
         public IChatroomMemberRepository ChatroomMemberRepository { get; private set; } = null!;
-        public IGroupInvitationRepository GroupInvitationRepository { get; private set; } = null!;
         public IUserRepository UserRepository { get; private set; } = null!;
         public IMessageRepository MessageRepository { get; private set; } = null!;
         public IMemberPermissionRepository MemberPermissionRepository { get; private set; } = null!;

@@ -23,7 +23,6 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<EmailOtp> EmailOtps { get; set; }
     public virtual DbSet<FriendRequest> FriendRequests { get; set; }
     public virtual DbSet<Friendship> Friendships { get; set; }
-    public virtual DbSet<GroupInvitation> GroupInvitations { get; set; }
     public virtual DbSet<Message> Messages { get; set; }
     public virtual DbSet<Notification> Notifications { get; set; }
     public virtual DbSet<Role> Roles { get; set; }
@@ -48,6 +47,9 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<CallLog> CallLogs { get; set; }
     public virtual DbSet<CallParticipant> CallParticipants { get; set; }
     public virtual DbSet<UserReport> UserReports { get; set; }
+    public virtual DbSet<FriendInvite> FriendInvites { get; set; }
+    public virtual DbSet<ScheduledMessage> ScheduledMessages { get; set; }
+    public virtual DbSet<Sticker> Stickers { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,7 +72,6 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new EmailOtpConfiguration());
         modelBuilder.ApplyConfiguration(new FriendRequestConfiguration());
         modelBuilder.ApplyConfiguration(new FriendshipConfiguration());
-        modelBuilder.ApplyConfiguration(new GroupInvitationConfiguration());
         modelBuilder.ApplyConfiguration(new MessageConfiguration());
         modelBuilder.ApplyConfiguration(new NotificationConfiguration());
         modelBuilder.ApplyConfiguration(new RoleConfiguration());
@@ -96,6 +97,9 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new CallLogConfiguration());
         modelBuilder.ApplyConfiguration(new CallParticipantConfiguration());
         modelBuilder.ApplyConfiguration(new UserReportConfiguration());
+        modelBuilder.ApplyConfiguration(new FriendInviteConfiguration());
+        modelBuilder.ApplyConfiguration(new ScheduledMessageConfiguration());
+        modelBuilder.ApplyConfiguration(new StickerConfiguration());
         OnModelCreatingPartial(modelBuilder);
     }
 

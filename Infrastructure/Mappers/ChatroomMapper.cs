@@ -36,6 +36,7 @@ namespace linksy_backend_api.Infrastructure.Mappers
                     MemberRole = m.MemberRole,
                     Nickname = m.Nickname,
                     JoinedAt = m.JoinedAt ?? DateTime.UtcNow,
+                    LastReadAt = m.LastReadAt,
                     AddedBy = m.AddedBy,
                     AddedByUsername = addedByMember?.User?.Username,
                     AddedByFullname = addedByMember?.User?.Fullname

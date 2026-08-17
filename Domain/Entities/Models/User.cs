@@ -74,10 +74,6 @@ public partial class User
 
     public virtual ICollection<Friendship> FriendshipUser2s { get; set; } = new List<Friendship>();
 
-    public virtual ICollection<GroupInvitation> GroupInvitationInvitedByNavigations { get; set; } = new List<GroupInvitation>();
-
-    public virtual ICollection<GroupInvitation> GroupInvitationInvitedUsers { get; set; } = new List<GroupInvitation>();
-
     public virtual ICollection<Message> Messages { get; set; } = new List<Message>();
 
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();

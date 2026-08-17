@@ -347,6 +347,62 @@ namespace linksy_backend_api.Infrastructure.Services
                 DurationMs = null
             };
         }
+        public async Task<UploadAttachmentResponse> UploadStickerAsync(IFormFile file, Guid userId)
+        {
+            ValidateStickerImage(file);
+
+            var publicId = $"linksy/stickers/{userId}/{Guid.NewGuid()}";
+            await using var stream = file.OpenReadStream();
+            var uploadParams = new ImageUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                PublicId = publicId,
+                Overwrite = false,
+                Transformation = new Transformation()
+                    .Width(1024).Height(1024)
+                    .Crop("limit")
+                    .Quality("auto:good")
+                    .FetchFormat("auto")
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+            if (result.Error != null)
+                throw new Exception($"Cloudinary upload error: {result.Error.Message}");
+
+            return new UploadAttachmentResponse
+            {
+                AttachmentType = "sticker",
+                FileName = file.FileName,
+                CdnUrl = result.SecureUrl.ToString(),
+                FilePath = result.PublicId,
+                FileSize = result.Bytes,
+                MimeType = file.ContentType ?? "image/png",
+                ThumbnailUrl = result.SecureUrl.ToString(),
+                Width = result.Width,
+                Height = result.Height,
+                DurationMs = null
+            };
+        }
+
+        private static void ValidateStickerImage(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                throw new InvalidOperationException("File không hợp lệ");
+
+            const long maxStickerSize = 5 * 1024 * 1024;
+            if (file.Length > maxStickerSize)
+                throw new InvalidOperationException($"File quá lớn. Tối đa: {maxStickerSize / 1024 / 1024}MB");
+
+            var contentType = (file.ContentType ?? string.Empty).Split(';')[0].Trim().ToLowerInvariant();
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+            var allowedTypes = new[] { "image/png", "image/webp" };
+            var allowedExtensions = new[] { ".png", ".webp" };
+
+            if (!allowedTypes.Contains(contentType) || !allowedExtensions.Contains(extension))
+                throw new InvalidOperationException("Sticker chỉ chấp nhận định dạng PNG hoặc WebP để giữ nền trong suốt.");
+        }
+
         private static void ValidateAttachment(IFormFile file, string attachmentType)
         {
             var contentType = (file.ContentType ?? string.Empty)

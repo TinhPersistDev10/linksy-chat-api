@@ -103,7 +103,11 @@ namespace linksy_backend_api.Services
             if (distinctMembers.Count < 2)
                 throw new ArgumentException("Group chat phải có ít nhất 3 người (bạn + 2 thành viên).");
 
+            var actor = await _unitOfWork.Users.GetByIdAsync(userId)
+                ?? throw new KeyNotFoundException("Acting user does not exist.");
+
             await _unitOfWork.BeginTransactionAsync();
+            var addedMemberIds = new List<Guid>();
             try
             {
                 var newChatroom = new Chatroom
@@ -131,12 +135,33 @@ namespace linksy_backend_api.Services
                     var member = new ChatroomMember { MemberId = Guid.NewGuid(), ChatroomId = newChatroom.ChatroomId, UserId = memberId, MemberRole = "member", AddedBy = userId, JoinedAt = DateTime.UtcNow };
                     await _unitOfWork.ChatroomMembers.AddAsync(member);
                     await _unitOfWork.MemberPermissionRepository.CreateDefaultAsync(member.MemberId, isAdmin: false);
+                    addedMemberIds.Add(memberId);
                 }
 
                 await _unitOfWork.CommitTransactionAsync();
                 var response = await MapToChatroomResponseAsync(newChatroom, userId);
 
-                foreach (var memberId in distinctMembers)
+                try
+                {
+                    await _notificationService.CreateBulkNotificationsAsync(
+                        addedMemberIds.Select(memberId => new CreateNotificationRequest
+                        {
+                            UserId = memberId,
+                            NotificationType = "added_to_group",
+                            Title = "Đã thêm vào nhóm",
+                            Body = $"{DisplayName(actor)} đã thêm bạn vào nhóm '{newChatroom.RoomName ?? "Nhóm"}'.",
+                            RelatedEntityId = newChatroom.ChatroomId,
+                            RelatedEntityType = "chatroom",
+                            ActionUrl = $"/dashboard?chatroomId={newChatroom.ChatroomId}",
+                            ImageUrl = newChatroom.Avatar
+                        }).ToList());
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to create add-member notifications for {ChatroomId}", newChatroom.ChatroomId);
+                }
+
+                foreach (var memberId in addedMemberIds)
                 {
                     var conns = await _connectionManager.GetConnectionsAsync(memberId);
                     if (conns.Any())

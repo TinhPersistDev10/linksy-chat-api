@@ -266,12 +266,6 @@ namespace linksy_backend_api.Infrastructure.Services
                     .ToListAsync();
                 _unitOfWork.UserRoles.RemoveRange(userRoles);
 
-                // 8. Xóa Group Invitations
-                var invitations = await _unitOfWork.GroupInvitations.Query()
-                    .Where(gi => gi.InvitedUserId == userId || gi.InvitedBy == userId)
-                    .ToListAsync();
-                _unitOfWork.GroupInvitations.RemoveRange(invitations);
-
                 // 9. Xử lý Role Members
                 var memberships = await _unitOfWork.ChatroomMembers.Query()
                     .Where(rm => rm.UserId == userId)
@@ -1175,11 +1169,6 @@ namespace linksy_backend_api.Infrastructure.Services
                 var userRoles = await _unitOfWork.UserRoles.Query()
                     .Where(ur => ur.UserId == userId).ToListAsync();
                 _unitOfWork.UserRoles.RemoveRange(userRoles);
-
-                // 8. Group invitations
-                var invitations = await _unitOfWork.GroupInvitations.Query()
-                    .Where(gi => gi.InvitedUserId == userId || gi.InvitedBy == userId).ToListAsync();
-                _unitOfWork.GroupInvitations.RemoveRange(invitations);
 
                 // 9. Chatroom memberships
                 var memberships = await _unitOfWork.ChatroomMembers.Query()
