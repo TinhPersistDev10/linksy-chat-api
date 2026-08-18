@@ -81,7 +81,7 @@ public partial class ChatroomService
                 systemMessages.Add(await AddMembershipSystemMessageAsync(
                     chatroom,
                     userId,
-                    $"{DisplayName(actor)} added {DisplayName(addedUser)} to the group."));
+                    $"{DisplayName(actor)} đã thêm {DisplayName(addedUser)} vào nhóm."));
             }
 
             if (addedUsers.Count == 0)
@@ -115,8 +115,8 @@ public partial class ChatroomService
                 {
                     UserId = addedUser.UserId,
                     NotificationType = "added_to_group",
-                    Title = "Added to group",
-                    Body = $"{DisplayName(actor)} added you to the group '{chatroom.RoomName ?? "Group"}'.",
+                    Title = "Đã thêm vào nhóm",
+                    Body = $"{DisplayName(actor)} đã thêm bạn vào nhóm '{chatroom.RoomName ?? "Nhóm"}'.",
                     RelatedEntityId = chatroomId,
                     RelatedEntityType = "chatroom",
                     ActionUrl = $"/dashboard?chatroomId={chatroomId}",

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using linksy_backend_api.Models;
@@ -11,9 +12,11 @@ using linksy_backend_api.Models;
 namespace linksy_backend_api.Infrastructure.Migrations
 {
     [DbContext(typeof(LinksyDbContext))]
-    partial class LinksyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260816090746_RemoveGroupInvitations")]
+    partial class RemoveGroupInvitations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -753,41 +756,6 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         .HasDatabaseName("scheduled_messages_room_sender_status_idx");
 
                     b.ToTable("scheduled_messages", (string)null);
-                });
-
-            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.Sticker", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("ImageUrl")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("image_url");
-
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("owner_id");
-
-                    b.Property<string>("PublicId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("public_id");
-
-                    b.HasKey("Id")
-                        .HasName("stickers_pkey");
-
-                    b.HasIndex("OwnerId")
-                        .HasDatabaseName("stickers_owner_id_idx");
-
-                    b.ToTable("stickers", (string)null);
                 });
 
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserReport", b =>
@@ -2074,18 +2042,6 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("ParentMessage");
 
                     b.Navigation("Sender");
-                });
-
-            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.Sticker", b =>
-                {
-                    b.HasOne("linksy_backend_api.Models.User", "Owner")
-                        .WithMany()
-                        .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("stickers_owner_id_fkey");
-
-                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserReport", b =>

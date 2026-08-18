@@ -127,7 +127,7 @@ namespace linksy_backend_api.Services
             var isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, passwordHash);
 
             if (user == null)
-                throw new Exception("Email/Username hoặc mật khẩu không đúng");
+                throw new Exception("Tài khoản không tồn tại");
 
             // Kiểm tra account locked
             if (user.AccountLockedUntil.HasValue && user.AccountLockedUntil > DateTime.UtcNow)

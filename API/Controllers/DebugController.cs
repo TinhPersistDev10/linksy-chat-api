@@ -7,21 +7,40 @@ using System.Threading.Tasks;
 using linksy_backend_api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace linksy_backend_api.Controllers
 {
-    // [Authorize]
+    /// <summary>
+    /// Local debugging aid for inspecting JWTs. Some actions are intentionally
+    /// anonymous, so the whole controller is gated to Development via
+    /// <see cref="OnActionExecuting"/> instead of relying on [Authorize].
+    /// </summary>
     [EnableRateLimiting("public")]
     [ApiController]
     [Route("api/v1/[controller]")]
-    public class DebugController : ControllerBase
+    public class DebugController : ControllerBase, IActionFilter
     {
         private readonly ILogger<DebugController> _logger;
+        private readonly IWebHostEnvironment _environment;
 
-        public DebugController(ILogger<DebugController> logger)
+        public DebugController(ILogger<DebugController> logger, IWebHostEnvironment environment)
         {
             _logger = logger;
+            _environment = environment;
+        }
+
+        public void OnActionExecuting(ActionExecutingContext context)
+        {
+            if (!_environment.IsDevelopment())
+            {
+                context.Result = new NotFoundResult();
+            }
+        }
+
+        public void OnActionExecuted(ActionExecutedContext context)
+        {
         }
 
         /// <summary>

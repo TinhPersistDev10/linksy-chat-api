@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using linksy_backend_api.Models;
@@ -11,9 +12,11 @@ using linksy_backend_api.Models;
 namespace linksy_backend_api.Infrastructure.Migrations
 {
     [DbContext(typeof(LinksyDbContext))]
-    partial class LinksyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814162606_AddFriendInvites")]
+    partial class AddFriendInvites
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -132,6 +135,7 @@ namespace linksy_backend_api.Infrastructure.Migrations
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.FriendInvite", b =>
                 {
                     b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
@@ -690,104 +694,6 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("privacy_settings", (string)null);
-                });
-
-            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.ScheduledMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<Guid>("ChatroomId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("chatroom_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("MessageText")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("message_text");
-
-                    b.Property<string>("MessageType")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("message_type");
-
-                    b.Property<Guid?>("ParentMessageId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("parent_message_id");
-
-                    b.Property<DateTime>("SendAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("send_at");
-
-                    b.Property<Guid>("SenderId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("sender_id");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("pending")
-                        .HasColumnName("status");
-
-                    b.HasKey("Id")
-                        .HasName("scheduled_messages_pkey");
-
-                    b.HasIndex("ParentMessageId");
-
-                    b.HasIndex("SenderId");
-
-                    b.HasIndex("Status", "SendAt")
-                        .HasDatabaseName("scheduled_messages_due_idx");
-
-                    b.HasIndex("ChatroomId", "SenderId", "Status", "SendAt")
-                        .HasDatabaseName("scheduled_messages_room_sender_status_idx");
-
-                    b.ToTable("scheduled_messages", (string)null);
-                });
-
-            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.Sticker", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("ImageUrl")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("image_url");
-
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("owner_id");
-
-                    b.Property<string>("PublicId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("public_id");
-
-                    b.HasKey("Id")
-                        .HasName("stickers_pkey");
-
-                    b.HasIndex("OwnerId")
-                        .HasDatabaseName("stickers_owner_id_idx");
-
-                    b.ToTable("stickers", (string)null);
                 });
 
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserReport", b =>
@@ -1423,6 +1329,65 @@ namespace linksy_backend_api.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Models.GroupInvitation", b =>
+                {
+                    b.Property<Guid>("InvitationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invitation_id");
+
+                    b.Property<Guid>("ChatroomId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("chatroom_id");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("InvitedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invited_by");
+
+                    b.Property<Guid>("InvitedUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invited_user_id");
+
+                    b.Property<string>("Message")
+                        .HasColumnType("character varying")
+                        .HasColumnName("message");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("responded_at");
+
+                    b.Property<DateTime?>("SentAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("character varying")
+                        .HasColumnName("status")
+                        .HasDefaultValueSql("'pending'::character varying");
+
+                    b.HasKey("InvitationId")
+                        .HasName("group_invitations_pkey");
+
+                    b.HasIndex("InvitedBy");
+
+                    b.HasIndex(new[] { "ChatroomId", "InvitedUserId", "Status" }, "group_invitations_chatroom_id_invited_user_id_status_idx");
+
+                    b.HasIndex(new[] { "ChatroomId", "Status" }, "group_invitations_chatroom_id_status_idx");
+
+                    b.HasIndex(new[] { "ExpiresAt" }, "group_invitations_expires_at_idx");
+
+                    b.HasIndex(new[] { "InvitedUserId", "Status", "SentAt" }, "group_invitations_invited_user_id_status_sent_at_idx");
+
+                    b.ToTable("group_invitations", (string)null);
+                });
+
             modelBuilder.Entity("linksy_backend_api.Models.Message", b =>
                 {
                     b.Property<Guid>("MessageId")
@@ -2047,47 +2012,6 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.ScheduledMessage", b =>
-                {
-                    b.HasOne("linksy_backend_api.Models.Chatroom", "Chatroom")
-                        .WithMany()
-                        .HasForeignKey("ChatroomId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("scheduled_messages_chatroom_id_fkey");
-
-                    b.HasOne("linksy_backend_api.Models.Message", "ParentMessage")
-                        .WithMany()
-                        .HasForeignKey("ParentMessageId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("scheduled_messages_parent_message_id_fkey");
-
-                    b.HasOne("linksy_backend_api.Models.User", "Sender")
-                        .WithMany()
-                        .HasForeignKey("SenderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("scheduled_messages_sender_id_fkey");
-
-                    b.Navigation("Chatroom");
-
-                    b.Navigation("ParentMessage");
-
-                    b.Navigation("Sender");
-                });
-
-            modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.Sticker", b =>
-                {
-                    b.HasOne("linksy_backend_api.Models.User", "Owner")
-                        .WithMany()
-                        .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("stickers_owner_id_fkey");
-
-                    b.Navigation("Owner");
-                });
-
             modelBuilder.Entity("linksy_backend_api.Domain.Entities.Models.UserReport", b =>
                 {
                     b.HasOne("linksy_backend_api.Models.User", "ReportedUser")
@@ -2279,6 +2203,33 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("User2");
                 });
 
+            modelBuilder.Entity("linksy_backend_api.Models.GroupInvitation", b =>
+                {
+                    b.HasOne("linksy_backend_api.Models.Chatroom", "Chatroom")
+                        .WithMany("GroupInvitations")
+                        .HasForeignKey("ChatroomId")
+                        .IsRequired()
+                        .HasConstraintName("group_invitations_chatroom_id_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "InvitedByNavigation")
+                        .WithMany("GroupInvitationInvitedByNavigations")
+                        .HasForeignKey("InvitedBy")
+                        .IsRequired()
+                        .HasConstraintName("group_invitations_invited_by_fkey");
+
+                    b.HasOne("linksy_backend_api.Models.User", "InvitedUser")
+                        .WithMany("GroupInvitationInvitedUsers")
+                        .HasForeignKey("InvitedUserId")
+                        .IsRequired()
+                        .HasConstraintName("group_invitations_invited_user_id_fkey");
+
+                    b.Navigation("Chatroom");
+
+                    b.Navigation("InvitedByNavigation");
+
+                    b.Navigation("InvitedUser");
+                });
+
             modelBuilder.Entity("linksy_backend_api.Models.Message", b =>
                 {
                     b.HasOne("linksy_backend_api.Models.Chatroom", "Chatroom")
@@ -2364,6 +2315,8 @@ namespace linksy_backend_api.Infrastructure.Migrations
                 {
                     b.Navigation("ChatroomMembers");
 
+                    b.Navigation("GroupInvitations");
+
                     b.Navigation("Messages");
 
                     b.Navigation("PinnedMessages");
@@ -2415,6 +2368,10 @@ namespace linksy_backend_api.Infrastructure.Migrations
                     b.Navigation("FriendshipUser1s");
 
                     b.Navigation("FriendshipUser2s");
+
+                    b.Navigation("GroupInvitationInvitedByNavigations");
+
+                    b.Navigation("GroupInvitationInvitedUsers");
 
                     b.Navigation("MessageDeliveries");
 

@@ -20,6 +20,7 @@ using linksy_backend_api.Domain.Interfaces.Repositories;
 using linksy_backend_api.Domain.DTOs.Responses.Reactions;
 using linksy_backend_api.Domain.DTOs.Responses.Messages;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 namespace linksy_backend_api.Infrastructure.Services
 {
     public class MessageService : IMessageService
@@ -161,7 +162,29 @@ namespace linksy_backend_api.Infrastructure.Services
                 result.Add(response);
             }
 
+            await ApplyReplyCountsAsync(result);
             return result;
+        }
+
+        private async Task ApplyReplyCountsAsync(List<MessageResponse> responses)
+        {
+            if (responses.Count == 0) return;
+
+            var messageIds = responses.Select(r => r.MessageId).ToList();
+            var counts = await _unitOfWork.Messages.Query()
+                .Where(m =>
+                    m.ParentMessageId != null &&
+                    messageIds.Contains(m.ParentMessageId.Value) &&
+                    (m.IsDeleted == null || m.IsDeleted == false))
+                .GroupBy(m => m.ParentMessageId!.Value)
+                .Select(g => new { ParentId = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var countByParent = counts.ToDictionary(x => x.ParentId, x => x.Count);
+            foreach (var response in responses)
+            {
+                response.ReplyCount = countByParent.GetValueOrDefault(response.MessageId);
+            }
         }
 
         public async Task<List<MessageResponse>> GetRepliesAsync(Guid userId, Guid messageId)
@@ -183,18 +206,7 @@ namespace linksy_backend_api.Infrastructure.Services
             var replies = await _unitOfWork.MessageRepository
                 .GetRepliesAsync(messageId);
 
-            var result = new List<MessageResponse>();
-
-            foreach (var reply in replies)
-            {
-                result.Add(await MessageMapper.ToResponseAsync(
-                    reply,
-                    _unitOfWork,
-                    userId
-                ));
-            }
-
-            return result;
+            return await MapMessagesWithDeliveriesAsync(replies, userId);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -221,13 +233,18 @@ namespace linksy_backend_api.Infrastructure.Services
 
             var hasText = !string.IsNullOrWhiteSpace(messageDto.MessageText);
             var hasAttachments = messageDto.Attachments is not null && messageDto.Attachments.Any();
-            var allowedMessageTypes = new[] { "text", "image", "video", "file", "audio", "poll" };
+            var allowedMessageTypes = new[] { "text", "image", "video", "file", "audio", "poll", "sticker" };
             if (messageDto.MessageType == "text" && !hasText)
                 throw new ArgumentException("Nội dung tin nhắn không được để trống.");
 
             if (messageDto.MessageType == "poll")
             {
                 // poll payload validated below; no attachments required
+            }
+            else if (messageDto.MessageType == "sticker")
+            {
+                if (!hasText && !hasAttachments)
+                    throw new ArgumentException("Sticker không được để trống.");
             }
             else if (messageDto.MessageType != "text" && !hasAttachments)
                 throw new ArgumentException("Attachment is required.");
@@ -337,6 +354,8 @@ namespace linksy_backend_api.Infrastructure.Services
             var validatedMentions = await ValidateMentionsAsync(
                 chatroom,
                 userId,
+                messageDto.MessageType,
+                messageDto.MessageText,
                 messageDto.Mentions);
 
             await _unitOfWork.BeginTransactionAsync();
@@ -444,31 +463,43 @@ namespace linksy_backend_api.Infrastructure.Services
         /// </summary>
         private const int MaxMentionsPerMessage = 20;
 
+        // Matches a standalone @all or @everyone token (not part of a longer @word like @allison).
+        private static readonly Regex MentionEveryoneRegex = new(
+            @"(?<![\w@])@(all|everyone)(?!\w)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         private async Task<List<Guid>> ValidateMentionsAsync(
             Chatroom chatroom,
             Guid senderId,
+            string messageType,
+            string? messageText,
             List<Guid>? mentions)
         {
-            if (mentions is null || mentions.Count == 0)
-                return [];
-
             if (!string.Equals(chatroom.RoomType, "group", StringComparison.OrdinalIgnoreCase))
                 return [];
 
-            var distinctMentions = mentions
+            var mentionsEveryone =
+                string.Equals(messageType, "text", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrEmpty(messageText) &&
+                MentionEveryoneRegex.IsMatch(messageText);
+
+            var distinctMentions = (mentions ?? [])
                 .Where(id => id != Guid.Empty && id != senderId)
                 .Distinct()
                 .ToList();
 
-            if (distinctMentions.Count == 0)
+            if (!mentionsEveryone && distinctMentions.Count == 0)
                 return [];
 
-            if (distinctMentions.Count > MaxMentionsPerMessage)
+            if (!mentionsEveryone && distinctMentions.Count > MaxMentionsPerMessage)
                 throw new ArgumentException($"Mỗi tin nhắn chỉ được tag tối đa {MaxMentionsPerMessage} người.");
 
             var activeMemberIds = (await _unitOfWork.ChatroomMemberRepository
-                .GetActiveMemberIdsExceptAsync(chatroom.ChatroomId, Guid.Empty))
+                .GetActiveMemberIdsExceptAsync(chatroom.ChatroomId, senderId))
                 .ToHashSet();
+
+            if (mentionsEveryone)
+                return activeMemberIds.ToList();
 
             var invalid = distinctMentions.Where(id => !activeMemberIds.Contains(id)).ToList();
             if (invalid.Count > 0)
@@ -657,6 +688,7 @@ namespace linksy_backend_api.Infrastructure.Services
                 MessageText = source.MessageText,
                 ParentMessageId = source.ParentMessageId,
                 ParentMessage = source.ParentMessage,
+                ReplyCount = source.ReplyCount,
                 IsEdited = source.IsEdited,
                 IsDeleted = source.IsDeleted,
                 IsOwn = false,

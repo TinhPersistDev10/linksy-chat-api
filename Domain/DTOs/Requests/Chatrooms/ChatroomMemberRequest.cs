@@ -15,6 +15,7 @@ namespace linksy_backend_api.DTOs.ChatroomDTO
         public string? Nickname { get; set; }
         public DateTime JoinedAt { get; set; }
         public bool IsOnline { get; set; }
+        public DateTime? LastReadAt { get; set; }
         public Guid? AddedBy { get; set; }
         public string? AddedByUsername { get; set; }
         public string? AddedByFullname { get; set; }
