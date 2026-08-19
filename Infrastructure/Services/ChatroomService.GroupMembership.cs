@@ -349,6 +349,235 @@ public partial class ChatroomService
         };
     }
 
+    public async Task<ApiResponseDto> PromoteToAdminAsync(
+        Guid userId,
+        Guid chatroomId,
+        Guid memberId)
+    {
+        var chatroom = await RequireGroupAsync(chatroomId);
+        if (chatroom.CreatedBy != userId)
+            throw new UnauthorizedAccessException("Chỉ trưởng nhóm mới có quyền bổ nhiệm phó nhóm.");
+
+        var target = await _unitOfWork.ChatroomMemberRepository
+            .GetActiveMemberAsync(chatroomId, memberId)
+            ?? throw new KeyNotFoundException("Thành viên không tồn tại trong nhóm.");
+        if (target.MemberRole == "admin")
+            throw new InvalidOperationException("Thành viên này đã là phó nhóm.");
+
+        var actor = await _unitOfWork.Users.GetByIdAsync(userId)
+            ?? throw new KeyNotFoundException("Acting user does not exist.");
+        var promotedUser = await _unitOfWork.Users.GetByIdAsync(memberId)
+            ?? throw new KeyNotFoundException("Member user does not exist.");
+        Message systemMessage;
+
+        await _unitOfWork.BeginTransactionAsync();
+        try
+        {
+            target.MemberRole = "admin";
+            _unitOfWork.ChatroomMembers.Update(target);
+            await GrantAdminPermissionsAsync(target.MemberId);
+            systemMessage = await AddMembershipSystemMessageAsync(
+                chatroom,
+                userId,
+                $"{DisplayName(actor)} đã bổ nhiệm {DisplayName(promotedUser)} làm phó nhóm.");
+            await _unitOfWork.CommitTransactionAsync();
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            throw;
+        }
+
+        var activeMemberIds = await _unitOfWork.ChatroomRepository
+            .GetActiveMemberIdsAsync(chatroomId);
+        await InvalidateGroupCachesAsync(chatroomId, activeMemberIds);
+
+        await BroadcastMembershipSystemMessageAsync(systemMessage, userId);
+        await _hubContext.Clients.Group(chatroomId.ToString()).SendAsync(
+            "MemberRoleChanged",
+            new { ChatroomId = chatroomId, MemberId = memberId, NewRole = "admin", ChangedBy = userId });
+
+        var promotedConnections = await _connectionManager.GetConnectionsAsync(memberId);
+        if (promotedConnections.Any())
+            await _hubContext.Clients.Clients(promotedConnections)
+                .SendAsync("PromotedToAdmin", new { ChatroomId = chatroomId });
+
+        try
+        {
+            await _notificationService.CreateNotificationAsync(
+                new CreateNotificationRequest
+                {
+                    UserId = memberId,
+                    NotificationType = "promoted_to_group_admin",
+                    Title = "Bạn đã được bổ nhiệm làm phó nhóm",
+                    Body = $"{DisplayName(actor)} đã bổ nhiệm bạn làm phó nhóm '{chatroom.RoomName ?? "Nhóm"}'.",
+                    RelatedEntityId = chatroomId,
+                    RelatedEntityType = "chatroom",
+                    ImageUrl = chatroom.Avatar
+                });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create promotion notification for {UserId}", memberId);
+        }
+
+        return new ApiResponseDto { Success = true, Message = "Đã bổ nhiệm phó nhóm." };
+    }
+
+    public async Task<ApiResponseDto> DemoteFromAdminAsync(
+        Guid userId,
+        Guid chatroomId,
+        Guid memberId)
+    {
+        var chatroom = await RequireGroupAsync(chatroomId);
+        if (chatroom.CreatedBy != userId)
+            throw new UnauthorizedAccessException("Chỉ trưởng nhóm mới có quyền thu hồi quyền phó nhóm.");
+        if (memberId == chatroom.CreatedBy)
+            throw new InvalidOperationException("Không thể giáng chức trưởng nhóm.");
+
+        var target = await _unitOfWork.ChatroomMemberRepository
+            .GetActiveMemberAsync(chatroomId, memberId)
+            ?? throw new KeyNotFoundException("Thành viên không tồn tại trong nhóm.");
+        if (target.MemberRole != "admin")
+            throw new InvalidOperationException("Thành viên này không phải phó nhóm.");
+
+        var actor = await _unitOfWork.Users.GetByIdAsync(userId)
+            ?? throw new KeyNotFoundException("Acting user does not exist.");
+        var demotedUser = await _unitOfWork.Users.GetByIdAsync(memberId)
+            ?? throw new KeyNotFoundException("Member user does not exist.");
+        Message systemMessage;
+
+        await _unitOfWork.BeginTransactionAsync();
+        try
+        {
+            target.MemberRole = "member";
+            _unitOfWork.ChatroomMembers.Update(target);
+            await ResetMembershipPermissionsAsync(target.MemberId);
+            systemMessage = await AddMembershipSystemMessageAsync(
+                chatroom,
+                userId,
+                $"{DisplayName(actor)} đã thu hồi quyền phó nhóm của {DisplayName(demotedUser)}.");
+            await _unitOfWork.CommitTransactionAsync();
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            throw;
+        }
+
+        var activeMemberIds = await _unitOfWork.ChatroomRepository
+            .GetActiveMemberIdsAsync(chatroomId);
+        await InvalidateGroupCachesAsync(chatroomId, activeMemberIds);
+
+        await BroadcastMembershipSystemMessageAsync(systemMessage, userId);
+        await _hubContext.Clients.Group(chatroomId.ToString()).SendAsync(
+            "MemberRoleChanged",
+            new { ChatroomId = chatroomId, MemberId = memberId, NewRole = "member", ChangedBy = userId });
+
+        var demotedConnections = await _connectionManager.GetConnectionsAsync(memberId);
+        if (demotedConnections.Any())
+            await _hubContext.Clients.Clients(demotedConnections)
+                .SendAsync("DemotedFromAdmin", new { ChatroomId = chatroomId });
+
+        try
+        {
+            await _notificationService.CreateNotificationAsync(
+                new CreateNotificationRequest
+                {
+                    UserId = memberId,
+                    NotificationType = "demoted_from_group_admin",
+                    Title = "Bạn đã bị thu hồi quyền phó nhóm",
+                    Body = $"{DisplayName(actor)} đã thu hồi quyền phó nhóm của bạn trong '{chatroom.RoomName ?? "Nhóm"}'.",
+                    RelatedEntityId = chatroomId,
+                    RelatedEntityType = "chatroom",
+                    ImageUrl = chatroom.Avatar
+                });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create demotion notification for {UserId}", memberId);
+        }
+
+        return new ApiResponseDto { Success = true, Message = "Đã thu hồi quyền phó nhóm." };
+    }
+
+    public async Task<ApiResponseDto> DisbandChatroomAsync(Guid userId, Guid chatroomId)
+    {
+        var chatroom = await RequireGroupAsync(chatroomId);
+        if (chatroom.CreatedBy != userId)
+            throw new UnauthorizedAccessException("Chỉ trưởng nhóm mới có quyền giải tán nhóm.");
+
+        var actor = await _unitOfWork.Users.GetByIdAsync(userId)
+            ?? throw new KeyNotFoundException("Acting user does not exist.");
+        var activeMembers = await _unitOfWork.ChatroomMemberRepository
+            .GetActiveMembersWithUserAsync(chatroomId);
+        Message systemMessage;
+
+        await _unitOfWork.BeginTransactionAsync();
+        try
+        {
+            systemMessage = await AddMembershipSystemMessageAsync(
+                chatroom,
+                userId,
+                $"{DisplayName(actor)} đã giải tán nhóm.");
+
+            var now = DateTime.UtcNow;
+            foreach (var member in activeMembers)
+            {
+                member.LeftAt = now;
+                member.RemovedBy = userId;
+                _unitOfWork.ChatroomMembers.Update(member);
+            }
+
+            chatroom.IsActive = false;
+            chatroom.UpdatedAt = now;
+            _unitOfWork.Chatrooms.Update(chatroom);
+
+            await _unitOfWork.CommitTransactionAsync();
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            throw;
+        }
+
+        await InvalidateGroupCachesAsync(chatroomId, activeMembers.Select(m => m.UserId));
+        await BroadcastMembershipSystemMessageAsync(systemMessage, userId);
+
+        foreach (var member in activeMembers)
+        {
+            await RemoveUserConnectionsFromGroupAsync(member.UserId, chatroomId);
+
+            var connections = await _connectionManager.GetConnectionsAsync(member.UserId);
+            if (connections.Any())
+                await _hubContext.Clients.Clients(connections)
+                    .SendAsync("RemovedFromGroup", chatroomId);
+
+            if (member.UserId == userId) continue;
+
+            try
+            {
+                await _notificationService.CreateNotificationAsync(
+                    new CreateNotificationRequest
+                    {
+                        UserId = member.UserId,
+                        NotificationType = "group_disbanded",
+                        Title = "Nhóm đã bị giải tán",
+                        Body = $"{DisplayName(actor)} đã giải tán nhóm '{chatroom.RoomName ?? "Nhóm"}'.",
+                        RelatedEntityId = chatroomId,
+                        RelatedEntityType = "chatroom",
+                        ImageUrl = chatroom.Avatar
+                    });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create group-disbanded notification for {UserId}", member.UserId);
+            }
+        }
+
+        return new ApiResponseDto { Success = true, Message = "Đã giải tán nhóm." };
+    }
+
     private async Task<Chatroom> RequireGroupAsync(Guid chatroomId)
     {
         var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId)

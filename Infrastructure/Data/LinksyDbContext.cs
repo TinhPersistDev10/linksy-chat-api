@@ -50,6 +50,7 @@ public partial class LinksyDbContext : DbContext
     public virtual DbSet<FriendInvite> FriendInvites { get; set; }
     public virtual DbSet<ScheduledMessage> ScheduledMessages { get; set; }
     public virtual DbSet<Sticker> Stickers { get; set; }
+    public virtual DbSet<ContentModerationSetting> ContentModerationSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -100,6 +101,7 @@ public partial class LinksyDbContext : DbContext
         modelBuilder.ApplyConfiguration(new FriendInviteConfiguration());
         modelBuilder.ApplyConfiguration(new ScheduledMessageConfiguration());
         modelBuilder.ApplyConfiguration(new StickerConfiguration());
+        modelBuilder.ApplyConfiguration(new ContentModerationSettingConfiguration());
         OnModelCreatingPartial(modelBuilder);
     }
 

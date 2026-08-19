@@ -13,5 +13,5 @@ namespace linksy_backend_api.DTOs.Block
 
         [StringLength(2000)]
         public string Reason { get; set; } = string.Empty;
-    }
+    } 
 }

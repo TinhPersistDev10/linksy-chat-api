@@ -4,7 +4,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.AdminDTOs;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.DTOs;
+using linksy_backend_api.Infrastructure.Cache;
 using linksy_backend_api.Infrastructure.Helpers;
 using linksy_backend_api.Models;
 using linksy_backend_api.Repositories.IRepositories;
@@ -15,11 +17,13 @@ namespace linksy_backend_api.Infrastructure.Services
     public class AdminService : IAdminService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ICacheService _cache;
         private readonly ILogger<AdminService> _logger;
 
-        public AdminService(IUnitOfWork unitOfWork, ILogger<AdminService> logger)
+        public AdminService(IUnitOfWork unitOfWork, ICacheService cache, ILogger<AdminService> logger)
         {
             _unitOfWork = unitOfWork;
+            _cache = cache;
             _logger = logger;
         }
 
@@ -71,6 +75,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 await _unitOfWork.UserRoles.AddAsync(userRole);
                 await _unitOfWork.SaveChangesAsync();
+                await _cache.RemoveAsync(CacheKeys.UserProfile(dto.UserId));
 
                 return new ApiResponseDto
                 {
@@ -862,6 +867,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
                 _unitOfWork.UserRoles.Remove(userRole);
                 await _unitOfWork.SaveChangesAsync();
+                await _cache.RemoveAsync(CacheKeys.UserProfile(userId));
 
                 return new ApiResponseDto
                 {

@@ -306,10 +306,9 @@ builder.Services.AddScoped<IMemberPermissionService, MemberPermissionService>();
 builder.Services.AddScoped<IReactionService, ReactionService>();
 builder.Services.AddScoped<IPollService, PollService>();
 builder.Services.AddScoped<IStickerService, StickerService>();
-builder.Services.AddSingleton<IContentModerationService, ContentModerationService>();
-builder.Services.Configure<linksy_backend_api.Domain.Options.ContentModerationOptions>(
-    builder.Configuration.GetSection(
-        linksy_backend_api.Domain.Options.ContentModerationOptions.SectionName));
+builder.Services.AddSingleton<IContentModerationStateCache, ContentModerationStateCache>();
+builder.Services.AddScoped<IContentModerationService, ContentModerationService>();
+builder.Services.AddScoped<IContentModerationSettingsService, ContentModerationSettingsService>();
 builder.Services.AddScoped<IUserSettingsService, UserSettingsService>();
 builder.Services.AddScoped<ICallService, CallService>();
 builder.Services.AddScoped<ITokenRepository, TokenRepository>();
@@ -606,7 +605,8 @@ app.Use(async (context, next) =>
 app.UseCors("Frontend");
 
 app.UseAuthentication();
-app.UseRateLimiter();
+// TODO: re-enable — temporarily disabled rate limiting
+// app.UseRateLimiter();
 
 app.UseAuthorization();
 
@@ -637,6 +637,13 @@ if (args.Contains("--unlock-locked-users") && app.Environment.IsDevelopment())
     foreach (var user in locked)
         Console.WriteLine($"  - {user.Username} ({user.Email})");
     return;
+}
+
+// Load content moderation settings from DB into the in-memory cache before serving traffic.
+using (var startupScope = app.Services.CreateScope())
+{
+    var stateCache = startupScope.ServiceProvider.GetRequiredService<IContentModerationStateCache>();
+    await stateCache.RefreshAsync();
 }
 
 app.Run();

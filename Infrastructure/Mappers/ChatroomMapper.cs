@@ -88,6 +88,7 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 {
                     MemberId = myMembership.MemberId,
                     MemberRole = myMembership.MemberRole,
+                    IsOwner = myMembership.UserId == chatroom.CreatedBy,
                     Nickname = myMembership.Nickname,
                     IsMuted = isSelfMuted,
                     MutedUntil = myMembership.MutedUntil,
@@ -131,6 +132,7 @@ namespace linksy_backend_api.Infrastructure.Mappers
             return new ChatroomResponseDto
             {
                 ChatroomId = chatroom.ChatroomId,
+                CreatedBy = chatroom.CreatedBy,
                 RoomName = roomName ?? string.Empty,
                 Description = chatroom.Description ?? string.Empty,
                 Avatar = avatar ?? string.Empty,

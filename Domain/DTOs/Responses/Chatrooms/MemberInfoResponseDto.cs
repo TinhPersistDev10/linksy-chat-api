@@ -10,6 +10,7 @@ namespace linksy_backend_api.Domain.DTOs.Responses.Chatrooms
     {
         public Guid MemberId { get; set; }
         public string MemberRole { get; set; } = string.Empty;
+        public bool IsOwner { get; set; }
         public string? Nickname { get; set; }
         public bool IsMuted { get; set; }
         public DateTime? MutedUntil { get; set; }

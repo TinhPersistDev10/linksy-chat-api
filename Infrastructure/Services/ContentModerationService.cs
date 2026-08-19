@@ -1,9 +1,6 @@
-using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
 using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.Domain.Options;
-using Microsoft.Extensions.Options;
 
 namespace linksy_backend_api.Infrastructure.Services
 {
@@ -12,42 +9,27 @@ namespace linksy_backend_api.Infrastructure.Services
         public const string ViolationMessage =
             "Tin nhắn của bạn có từ khóa vi phạm tiêu chuẩn cộng đồng.";
 
-        private readonly bool _enabled;
-        private readonly HashSet<string> _bannedTokens;
-        private readonly List<string> _bannedPhrases;
+        private readonly IContentModerationStateCache _stateCache;
 
-        public ContentModerationService(IOptions<ContentModerationOptions> options)
+        public ContentModerationService(IContentModerationStateCache stateCache)
         {
-            var config = options.Value ?? new ContentModerationOptions();
-            _enabled = config.Enabled;
-
-            var normalized = (config.BannedWords ?? new List<string>())
-                .Select(Normalize)
-                .Where(w => w.Length > 0)
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
-
-            _bannedTokens = normalized
-                .Where(w => !w.Contains(' ', StringComparison.Ordinal))
-                .ToHashSet(StringComparer.Ordinal);
-
-            _bannedPhrases = normalized
-                .Where(w => w.Contains(' ', StringComparison.Ordinal))
-                .ToList();
+            _stateCache = stateCache;
         }
 
         public bool ContainsBannedContent(string? text)
         {
-            if (!_enabled || string.IsNullOrWhiteSpace(text))
+            var state = _stateCache.Current;
+
+            if (!state.Enabled || string.IsNullOrWhiteSpace(text))
                 return false;
-            if (_bannedTokens.Count == 0 && _bannedPhrases.Count == 0)
+            if (state.BannedTokens.Count == 0 && state.BannedPhrases.Count == 0)
                 return false;
 
-            var normalized = Normalize(text);
+            var normalized = ContentModerationState.Normalize(text);
             if (normalized.Length == 0)
                 return false;
 
-            foreach (var phrase in _bannedPhrases)
+            foreach (var phrase in state.BannedPhrases)
             {
                 var pattern = string.Join(
                     @"[^\p{L}\p{N}]+",
@@ -62,7 +44,7 @@ namespace linksy_backend_api.Infrastructure.Services
 
             foreach (var token in tokens)
             {
-                if (_bannedTokens.Contains(token))
+                if (state.BannedTokens.Contains(token))
                     return true;
             }
 
@@ -73,27 +55,6 @@ namespace linksy_backend_api.Infrastructure.Services
         {
             if (ContainsBannedContent(text))
                 throw new ArgumentException(ViolationMessage);
-        }
-
-        private static string Normalize(string input)
-        {
-            var lower = input.Trim().ToLowerInvariant()
-                .Replace('đ', 'd')
-                .Replace('Đ', 'd');
-
-            var formD = lower.Normalize(NormalizationForm.FormD);
-            var sb = new StringBuilder(formD.Length);
-            foreach (var ch in formD)
-            {
-                var category = CharUnicodeInfo.GetUnicodeCategory(ch);
-                if (category == UnicodeCategory.NonSpacingMark)
-                    continue;
-                if (ch is '\u200B' or '\u200C' or '\u200D' or '\uFEFF')
-                    continue;
-                sb.Append(ch);
-            }
-
-            return sb.ToString().Normalize(NormalizationForm.FormC);
         }
     }
 }

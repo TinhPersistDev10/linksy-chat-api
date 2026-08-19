@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using linksy_backend_api.Core.DTOs.AdminDTOs;
 using linksy_backend_api.Core.Interfaces.Services;
+using linksy_backend_api.Domain.Interfaces.Services;
 using linksy_backend_api.DTOs;
 using linksy_backend_api.DTOs.Moderation;
 using linksy_backend_api.DTOs.Report;
@@ -20,17 +21,20 @@ namespace linksy_backend_api.API.Controllers
         private readonly IAdminService _adminService;
         private readonly IUserReportService _reportService;
         private readonly IUserModerationService _moderationService;
+        private readonly IContentModerationSettingsService _contentModerationSettingsService;
         private readonly ILogger<AdminController> _logger;
 
         public AdminController(
             IAdminService adminService,
             IUserReportService reportService,
             IUserModerationService moderationService,
+            IContentModerationSettingsService contentModerationSettingsService,
             ILogger<AdminController> logger)
         {
             _adminService = adminService;
             _reportService = reportService;
             _moderationService = moderationService;
+            _contentModerationSettingsService = contentModerationSettingsService;
             _logger = logger;
         }
 
@@ -429,6 +433,56 @@ namespace linksy_backend_api.API.Controllers
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
+        }
+
+        #endregion
+
+        #region Content Moderation
+
+        /// <summary>
+        /// Get current content moderation settings (enabled flag + banned words)
+        /// GET /api/v1/admin/content-moderation
+        /// </summary>
+        [HttpGet("content-moderation")]
+        public async Task<ActionResult<ApiResponseDto>> GetContentModerationSettings()
+        {
+            var settings = await _contentModerationSettingsService.GetAsync();
+
+            return Ok(new ApiResponseDto
+            {
+                Success = true,
+                Message = "Content moderation settings retrieved.",
+                Data = new ContentModerationSettingsDto
+                {
+                    Enabled = settings.Enabled,
+                    BannedWords = settings.BannedWords,
+                    UpdatedAt = settings.UpdatedAt
+                }
+            });
+        }
+
+        /// <summary>
+        /// Update content moderation settings. Omit BannedWords to only change Enabled.
+        /// PUT /api/v1/admin/content-moderation
+        /// </summary>
+        [HttpPut("content-moderation")]
+        public async Task<ActionResult<ApiResponseDto>> UpdateContentModerationSettings(
+            [FromBody] UpdateContentModerationSettingsRequest request)
+        {
+            var settings = await _contentModerationSettingsService.UpdateAsync(
+                request.Enabled, request.BannedWords, CurrentUserId);
+
+            return Ok(new ApiResponseDto
+            {
+                Success = true,
+                Message = "Content moderation settings updated.",
+                Data = new ContentModerationSettingsDto
+                {
+                    Enabled = settings.Enabled,
+                    BannedWords = settings.BannedWords,
+                    UpdatedAt = settings.UpdatedAt
+                }
+            });
         }
 
         #endregion

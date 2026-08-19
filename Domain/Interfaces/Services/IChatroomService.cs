@@ -33,6 +33,9 @@ namespace linksy_backend_api.Services.IServices
         Task<ApiResponseDto> AddMembersAsync(Guid userId, Guid chatroomId, AddMembersRequest request);
         Task<ApiResponseDto> RemoveMemberAsync(Guid userId, Guid chatroomId, Guid memberId);
         Task<ApiResponseDto> LeaveChatroomAsync(Guid userId, Guid chatroomId);
+        Task<ApiResponseDto> PromoteToAdminAsync(Guid userId, Guid chatroomId, Guid memberId);
+        Task<ApiResponseDto> DemoteFromAdminAsync(Guid userId, Guid chatroomId, Guid memberId);
+        Task<ApiResponseDto> DisbandChatroomAsync(Guid userId, Guid chatroomId);
         #endregion
 
         

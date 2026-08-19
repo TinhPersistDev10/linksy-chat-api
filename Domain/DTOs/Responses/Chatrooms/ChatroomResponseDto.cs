@@ -10,7 +10,8 @@ namespace linksy_backend_api.DTOs.ChatroomDTO
     public class ChatroomResponseDto
     {
         public Guid ChatroomId { get; set; }
-        public string RoomName { get; set; } = string.Empty;    
+        public Guid CreatedBy { get; set; }
+        public string RoomName { get; set; } = string.Empty;
         public string Description { get; set; }   = string.Empty;
         public string Avatar { get; set; } = string.Empty;
         public string RoomType { get; set; } = string.Empty;

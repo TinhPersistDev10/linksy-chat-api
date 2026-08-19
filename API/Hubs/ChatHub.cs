@@ -677,6 +677,7 @@ namespace linksy_backend_api.Hubs
                     throw HubErrors.InvalidRequest();
 
                 var callerId = GetCurrentUserId();
+                
                 var call = await _callService.InitiateCallAsync(callerId, chatroomId, callType);
                 var recipientIds = call.Participants
                     .Where(participant => participant.UserId != callerId)

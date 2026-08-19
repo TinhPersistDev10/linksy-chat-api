@@ -325,6 +325,66 @@ namespace linksy_backend_api.Controllers
             }
         }
 
+        [HttpPut("{chatroomId:guid}/members/{memberId:guid}/promote")]
+        public async Task<IActionResult> PromoteMember(Guid chatroomId, Guid memberId)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.PromoteToAdminAsync(userId, chatroomId, memberId);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error promoting member");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{chatroomId:guid}/members/{memberId:guid}/demote")]
+        public async Task<IActionResult> DemoteMember(Guid chatroomId, Guid memberId)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.DemoteFromAdminAsync(userId, chatroomId, memberId);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error demoting member");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("{chatroomId:guid}")]
+        public async Task<IActionResult> DisbandChatroom(Guid chatroomId)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.DisbandChatroomAsync(userId, chatroomId);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error disbanding chatroom");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPost("{chatroomId:guid}/leave")]
         public async Task<IActionResult> LeaveChatroom(Guid chatroomId)
         {
