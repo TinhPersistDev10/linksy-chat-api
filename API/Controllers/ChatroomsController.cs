@@ -184,6 +184,26 @@ namespace linksy_backend_api.Controllers
             }
         }
 
+        [HttpPut("{chatroomId:guid}/quick-emoji")]
+        public async Task<IActionResult> UpdateQuickEmoji(Guid chatroomId, [FromBody] UpdateChatroomQuickEmojiRequest request)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.UpdateChatroomQuickEmojiAsync(userId, chatroomId, request.Emoji);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating chatroom quick emoji");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPut("{chatroomId:guid}/archive")]
         public async Task<IActionResult> ArchiveChatroom(Guid chatroomId, [FromBody] ArchiveChatroomRequest request)
         {
@@ -321,6 +341,26 @@ namespace linksy_backend_api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating member permissions");
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{chatroomId:guid}/members/{memberId:guid}/nickname")]
+        public async Task<IActionResult> UpdateMemberNickname(Guid chatroomId, Guid memberId, [FromBody] UpdateMemberNicknameRequest request)
+        {
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { message = "Invalid token." });
+
+            try
+            {
+                var result = await _chatroomService.UpdateMemberNicknameAsync(userId, chatroomId, memberId, request.Nickname);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating member nickname");
                 return BadRequest(new { message = ex.Message });
             }
         }

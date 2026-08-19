@@ -134,6 +134,7 @@ namespace linksy_backend_api.Infrastructure.Mappers
                 ChatroomId = chatroom.ChatroomId,
                 CreatedBy = chatroom.CreatedBy,
                 RoomName = roomName ?? string.Empty,
+                QuickEmoji = string.IsNullOrWhiteSpace(chatroom.QuickEmoji) ? "👍" : chatroom.QuickEmoji,
                 Description = chatroom.Description ?? string.Empty,
                 Avatar = avatar ?? string.Empty,
                 RoomType = chatroom.RoomType,

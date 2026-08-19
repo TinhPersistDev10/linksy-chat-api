@@ -14,6 +14,9 @@ public partial class Chatroom
 
     public string? Avatar { get; set; }
 
+    /// <summary>Quick-send emoji shown next to the composer when it's empty (default 👍).</summary>
+    public string? QuickEmoji { get; set; }
+
     public string RoomType { get; set; } = null!;
 
     public Guid CreatedBy { get; set; }

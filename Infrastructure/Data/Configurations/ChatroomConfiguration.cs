@@ -48,6 +48,10 @@ namespace linksy_backend_api.Infrastructure.Data.Configurations
             entity.Property(e => e.RoomName)
                 .HasColumnType("character varying")
                 .HasColumnName("room_name");
+            entity.Property(e => e.QuickEmoji)
+                .HasMaxLength(16)
+                .HasColumnType("character varying")
+                .HasColumnName("quick_emoji");
             entity.Property(e => e.RoomType)
                 .HasColumnType("character varying")
                 .HasColumnName("room_type");

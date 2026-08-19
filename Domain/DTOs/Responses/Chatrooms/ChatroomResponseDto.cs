@@ -14,6 +14,7 @@ namespace linksy_backend_api.DTOs.ChatroomDTO
         public string RoomName { get; set; } = string.Empty;
         public string Description { get; set; }   = string.Empty;
         public string Avatar { get; set; } = string.Empty;
+        public string QuickEmoji { get; set; } = "👍";
         public string RoomType { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public bool IsArchived { get; set; }

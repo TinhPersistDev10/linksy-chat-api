@@ -243,6 +243,30 @@ namespace linksy_backend_api.Services
             return await MapToChatroomResponseAsync(chatroom, userId);
         }
 
+        public async Task<ApiResponseDto> UpdateChatroomQuickEmojiAsync(Guid userId, Guid chatroomId, string emoji)
+        {
+            var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId)
+                ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");
+
+            _ = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId)
+                ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
+
+            var trimmed = (emoji ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(trimmed) || trimmed.Length > 16)
+                throw new InvalidOperationException("Emoji không hợp lệ.");
+
+            chatroom.QuickEmoji = trimmed;
+            chatroom.UpdatedAt = DateTime.UtcNow;
+            _unitOfWork.Chatrooms.Update(chatroom);
+            await _unitOfWork.SaveChangesAsync();
+
+            await _hubContext.Clients.Group(chatroomId.ToString()).SendAsync(
+                "ChatroomQuickEmojiChanged",
+                new { ChatroomId = chatroomId, QuickEmoji = trimmed, UpdatedBy = userId });
+
+            return new ApiResponseDto { Success = true, Message = "Đã đổi emoji nhanh." };
+        }
+
         public async Task<ApiResponseDto> UpdateMemberPermissionsAsync(Guid userId, Guid chatroomId, Guid memberId, UpdateMemberPermissionsRequest request)
         {
             var caller = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId)
@@ -276,6 +300,62 @@ namespace linksy_backend_api.Services
                 await _hubContext.Clients.Clients(targetConns).SendAsync("PermissionsUpdated", new { ChatroomId = chatroomId, UpdatedBy = userId });
 
             return new ApiResponseDto { Success = true, Message = "Đã cập nhật quyền thành viên." };
+        }
+
+        public async Task<ApiResponseDto> UpdateMemberNicknameAsync(Guid userId, Guid chatroomId, Guid memberId, string? nickname)
+        {
+            var chatroom = await _unitOfWork.Chatrooms.GetByIdAsync(chatroomId)
+                ?? throw new KeyNotFoundException("Không tìm thấy phòng chat.");
+
+            _ = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, userId)
+                ?? throw new UnauthorizedAccessException("Bạn không phải thành viên phòng chat này.");
+
+            var target = await _unitOfWork.ChatroomMemberRepository.GetActiveMemberAsync(chatroomId, memberId)
+                ?? throw new KeyNotFoundException("Không tìm thấy thành viên trong phòng chat.");
+
+            var trimmed = string.IsNullOrWhiteSpace(nickname) ? null : nickname.Trim();
+            if (trimmed is { Length: > 50 })
+                throw new InvalidOperationException("Biệt danh tối đa 50 ký tự.");
+
+            var actor = await _unitOfWork.Users.GetByIdAsync(userId)
+                ?? throw new KeyNotFoundException("Acting user does not exist.");
+            var targetUser = await _unitOfWork.Users.GetByIdAsync(memberId)
+                ?? throw new KeyNotFoundException("Member user does not exist.");
+
+            Message systemMessage;
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                target.Nickname = trimmed;
+                _unitOfWork.ChatroomMembers.Update(target);
+
+                var text = trimmed == null
+                    ? $"{DisplayName(actor)} đã xóa biệt danh của {DisplayName(targetUser)}."
+                    : userId == memberId
+                        ? $"{DisplayName(actor)} đã tự đặt biệt danh là \"{trimmed}\"."
+                        : $"{DisplayName(actor)} đã đặt biệt danh cho {DisplayName(targetUser)} là \"{trimmed}\".";
+
+                systemMessage = await AddMembershipSystemMessageAsync(chatroom, userId, text);
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                throw;
+            }
+
+            await InvalidateGroupCachesAsync(chatroomId, new[] { userId, memberId });
+            await BroadcastMembershipSystemMessageAsync(systemMessage, userId);
+
+            await _hubContext.Clients.Group(chatroomId.ToString()).SendAsync(
+                "MemberNicknameChanged",
+                new { ChatroomId = chatroomId, MemberId = memberId, Nickname = trimmed, UpdatedBy = userId });
+
+            return new ApiResponseDto
+            {
+                Success = true,
+                Message = trimmed == null ? "Đã xóa biệt danh." : "Đã cập nhật biệt danh.",
+            };
         }
 
         public async Task<AvatarResponse> UpdateGroupAvatarAsync(Guid userId, Guid chatroomId, IFormFile avatarFile)

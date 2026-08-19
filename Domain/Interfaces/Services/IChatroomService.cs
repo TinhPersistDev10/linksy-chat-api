@@ -27,6 +27,8 @@ namespace linksy_backend_api.Services.IServices
         Task<ChatroomResponseDto> UpdateChatroomInfoAsync(Guid userId, Guid chatroomId, UpdateChatroomRequest request);
         Task<AvatarResponse> UpdateGroupAvatarAsync(Guid userId, Guid chatroomId, IFormFile avatarFile);
         Task<ApiResponseDto> UpdateMemberPermissionsAsync(Guid userId, Guid chatroomId, Guid memberId, UpdateMemberPermissionsRequest request);
+        Task<ApiResponseDto> UpdateMemberNicknameAsync(Guid userId, Guid chatroomId, Guid memberId, string? nickname);
+        Task<ApiResponseDto> UpdateChatroomQuickEmojiAsync(Guid userId, Guid chatroomId, string emoji);
         #endregion
 
         #region Add/Remove members
